@@ -6,3 +6,6 @@ data/*
 lightning_logs/*
 *.ipynb
 outputs/*
+venv
+saved_models
+saved_models/*

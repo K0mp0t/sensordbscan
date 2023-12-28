@@ -7,6 +7,7 @@ from torch import Tensor
 from torch.nn import functional as F
 from torch.nn.modules import (BatchNorm1d, Dropout, Linear, MultiheadAttention,
                               TransformerEncoderLayer)
+from sklearn.cluster import DBSCAN
 
 def build_encoder(cfg):
 
@@ -182,3 +183,17 @@ class SensorSCAN(nn.Module):
         _, _, _, encoder_embedings, _ = self.encoder(X, pad_mask, return_all=True)
         clutsering_output = self.clustering_model(encoder_embedings)
         return clutsering_output
+
+
+class SensorDBSCAN(object):
+    def __init__(self, encoder):
+        self.encoder = encoder
+
+        self.clustering_algorithm = DBSCAN
+
+    def __call__(self, X):
+        with torch.no_grad():
+            embs = self.encoder(X)
+        clustering_output = self.clustering_algorithm().fit_predict(embs.cpu().numpy())
+
+        return clustering_output

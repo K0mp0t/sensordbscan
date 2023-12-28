@@ -71,4 +71,9 @@ neighbour_dataset_size: 140000
 num_neighbors: 5
 scan_batch_size: 128
 
-device:
+device: 'cuda'
+batch_size: 128
+metric: 'euclidean'
+epsilon: 0.2
+max_triplets: 10240
+n_samples_to_select: 100

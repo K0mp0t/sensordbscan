@@ -87,3 +87,27 @@ def train_scan_epoch(cfg, epoch, encoder, clustering_model, loader, loss_fn, enc
         loss_sum += total_loss.detach()
 
     return loss_sum.item() / len(loader)
+
+
+def train_triplet_epoch(cfg, model, dataloader, loss_fn, optimizer):
+    model.train()
+
+    train_loss = 0
+
+    optimizer.zero_grad()
+    for (anchors, positives, negatives) in tqdm(dataloader):
+        anchors = anchors.to(cfg.device)
+        positives = positives.to(cfg.device)
+        negatives = negatives.to(cfg.device)
+
+        anchor_embs = model(anchors)
+        positive_embs = model(positives)
+        negative_embs = model(negatives)
+
+        loss = loss_fn(anchor_embs, positive_embs, negative_embs)
+        train_loss += loss.item()
+
+        loss.backward()
+        optimizer.step()
+
+    return train_loss / len(dataloader)
