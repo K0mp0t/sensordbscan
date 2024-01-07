@@ -15,7 +15,8 @@ def build_pretraining_dataloader(cfg):
     train_dataloader = torch.utils.data.DataLoader(dataset=train_dataset,
                                                    batch_size=cfg.train_batch_size,
                                                    shuffle=True,
-                                                   num_workers=0, drop_last=True)
+                                                   drop_last = True,
+                                                   num_workers=6, pin_memory=True)
 
     return train_dataloader
 
@@ -58,7 +59,7 @@ def build_triplets_loader(cfg, model, old_indices):
     triplets_loader = torch.utils.data.DataLoader(dataset=triplets_dataset,
                                                   batch_size=cfg.batch_size,
                                                   shuffle=True,
-                                                  num_workers=0)
+                                                  num_workers=6, pin_memory=True)
 
     return triplets_loader, indices
 

@@ -8,7 +8,7 @@ def train_ssl_epoch(cfg, model, dataloader, loss_fn, optimizer):
     model.train()
     loss_sum = 0
     
-    for n, (x_weak, y_weak, mask_weak, x_strong, y_strong, mask_strong, _) in tqdm(enumerate(dataloader), total = len(dataloader)):
+    for n, (x_weak, y_weak, mask_weak, x_strong, y_strong, mask_strong, _) in tqdm(enumerate(dataloader), total=len(dataloader)):
 
         optimizer.zero_grad()
         
@@ -31,10 +31,10 @@ def train_ssl_epoch(cfg, model, dataloader, loss_fn, optimizer):
         x_weak, y_weak, mask_weak = x_weak.to(cfg.device), y_weak.to(cfg.device), mask_weak.to(cfg.device)
         x_strong, y_strong, mask_strong = x_strong.to(cfg.device), y_strong.to(cfg.device), mask_strong.to(cfg.device)
 
-        x = torch.cat([x_weak, x_strong], dim = 0)
-        y = torch.cat([y_weak, y_strong], dim = 0)
-        mask = torch.cat([mask_weak, mask_strong], dim = 0)
-        pad_mask = torch.ones(*x.shape[:-1], dtype = torch.bool, device = cfg.device)
+        x = torch.cat([x_weak, x_strong], dim=0)
+        y = torch.cat([y_weak, y_strong], dim=0)
+        mask = torch.cat([mask_weak, mask_strong], dim=0)
+        pad_mask = torch.ones(*x.shape[:-1], dtype=torch.bool, device=cfg.device)
         
         prediction, embedings = model(x, pad_mask)
         

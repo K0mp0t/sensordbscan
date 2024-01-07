@@ -27,7 +27,7 @@ pretraining:
   dataset_name: ${dataset}
   dataset_window_size: 300
   step_size: 1
-  train_batch_size: 1024
+  train_batch_size: 1280
   visualize_batch_size: 256
   num_features: 30
 
