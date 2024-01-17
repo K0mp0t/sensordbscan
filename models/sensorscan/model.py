@@ -159,7 +159,7 @@ class TSTransformerEncoder(nn.Module):
         output_emb = output.permute(1, 0, 2)  
         output_pred = self.dropout1(output_emb)
         
-        output_pred = self.output_layer(output_pred) 
+        output_pred = self.output_layer(output_pred)
         
         output_emb_pool = self.seq_pooling(output_emb)
         output_emb_proj = self.projection_linear(output_emb_pool)
@@ -186,14 +186,16 @@ class SensorSCAN(nn.Module):
 
 
 class SensorDBSCAN(object):
-    def __init__(self, encoder):
+    def __init__(self, encoder, cfg):
         self.encoder = encoder
+        self.cfg = cfg
 
         self.clustering_algorithm = DBSCAN
 
     def __call__(self, X):
+        pad_masks = torch.ones(*X.shape[:-1], dtype=torch.bool, device=self.cfg.device)
         with torch.no_grad():
-            embs = self.encoder(X)
+            embs = self.encoder(X, pad_masks)[1]
         clustering_output = self.clustering_algorithm().fit_predict(embs.cpu().numpy())
 
         return clustering_output

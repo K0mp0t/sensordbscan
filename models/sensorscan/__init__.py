@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import os
-from models.sensorscan.data_utils import build_pretraining_dataloader, build_neighbour_loader, build_triplets_loader
+from models.sensorscan.data_utils import build_pretraining_dataloader, build_neighbour_loader, build_triplets_loader, SlicesDataset
 from models.sensorscan.model import build_encoder, build_clustering, SensorSCAN, SensorDBSCAN
 from models.sensorscan.optim import build_pretraining_optim, build_scan_optim, build_triplet_optim
 from models.sensorscan.train_utils import train_ssl_epoch, train_scan_epoch, train_triplet_epoch
@@ -69,17 +69,19 @@ def run(cfg):
             loss_fn, optimizer = build_pretraining_optim(cfg.pretraining, encoder)
             for epoch in range(cfg.pretraining.epochs):
                 avg_loss = train_ssl_epoch(cfg.pretraining, encoder, pretraining_loader, loss_fn, optimizer)
-                print(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
+                logging.info(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
 
             torch.save(encoder.state_dict(), './saved_models/pretrained_encoder.pt')
 
         logging.info('Training encoder with triplet loss')
         indices = list()
+        slices_dataset = SlicesDataset(dataset.df.to_numpy(), dataset.label.to_numpy(), cfg.window_size)
         loss_fn, optimizer = build_triplet_optim(cfg, encoder)
         for epoch in range(cfg.epochs):
-            triplets_loader, indices = build_triplets_loader(cfg, encoder, indices)
+            logging.info(f'Getting triplets for epoch #{epoch}')
+            triplets_loader, indices = build_triplets_loader(cfg, slices_dataset, encoder, indices)
             avg_loss = train_triplet_epoch(cfg, encoder, triplets_loader, loss_fn, optimizer)
-            print(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
+            logging.info(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
 
         cfg.path_to_model = f'saved_models/sensordbscan_encoder_{dataset_name}.pth'
         torch.save(encoder.state_dict(), cfg.path_to_model)
@@ -87,7 +89,7 @@ def run(cfg):
     encoder = build_encoder(cfg.pretraining)
     encoder.load_state_dict(torch.load(cfg.path_to_model, map_location=cfg.device))
 
-    sensordbscan = SensorDBSCAN(encoder)
+    sensordbscan = SensorDBSCAN(encoder, cfg)
 
     logging.info('Getting predictions on train')
     encoder.eval()

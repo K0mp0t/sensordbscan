@@ -76,3 +76,4 @@ batch_size: 128
 metric: 'euclidean'
 epsilon: 0.2
 max_triplets: 10240
+n_samples_to_select: 100

@@ -9,3 +9,9 @@ outputs/*
 venv
 saved_models
 saved_models/*
+.idea/
+.idea/**
+results/
+results/**
+EDA/
+EDA/**

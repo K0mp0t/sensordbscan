@@ -35,6 +35,7 @@ def main(cfg):
     logging.info('Creating label matching')
     label_matching = weighted_max_occurence(train_label, train_pred, n_types)
 
+    # TODO: fix here. Looks like theres a diversity between predicted set of clusters and labels (e.g. number of unique clusters in predicted is bigger than label clusters)
     test_pred = pd.Series(label_matching[test_pred], index=test_pred.index)
     logging.info('Calculating FDD metrics')
     evaluator = FDDEvaluator(step_size=cfg.step_size)

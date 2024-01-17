@@ -1,10 +1,12 @@
 import numpy as np
+import pandas as pd
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
 import torch
 from fddbenchmark import FDDDataloader, FDDDataset
 from tqdm import tqdm
 import scipy
+import logging
 
 
 def build_pretraining_dataloader(cfg):
@@ -40,22 +42,24 @@ def build_neighbour_loader(cfg, encoder):
     return neighbor_loader
 
 
-def build_triplets_loader(cfg, model, old_indices):
-    dataset = _build_fdd_dataset(cfg.pretraining, False)
-    X = dataset.df.drop(columns=['run_id'])
-    y = dataset.label.drop(columns=['run_id', 'sample'])
+def build_triplets_loader(cfg, sliced_dataset, model, old_indices):
+    # dataset = _build_fdd_dataset(cfg.pretraining, False)
+    dataloader = torch.utils.data.DataLoader(sliced_dataset, batch_size=cfg.eval_batch_size, shuffle=False,
+                                             num_workers=6, pin_memory=True)
 
     embs = list()
-    for i in range(X.shape[0] // cfg.batch_size + (X.shape[0] % cfg.batch_size != 0)):
+    for X, _ in tqdm(dataloader, total=len(dataloader)):
         with torch.no_grad():
-            embs.append(model(torch.FloatTensor(X[i*cfg.batch_size: (i+1)*cfg.batch_size]).to(cfg.device)))
+            pad_mask = torch.ones(*X.shape[:-1], dtype=torch.bool, device=cfg.device)
+            pred = model(X.to(cfg.device), pad_mask)
+            embs.append(pred[1])
 
     embs = torch.cat(embs, dim=0)
-    clustering_labels = DBSCAN().fit_predict(embs)
+    clustering_labels = DBSCAN().fit_predict(embs.cpu().numpy())
 
-    indices = select_samples_to_label(embs, clustering_labels, cfg.n_samples_to_select, old_indices)
+    indices = select_samples_to_label(embs.cpu(), clustering_labels, cfg.n_samples_to_select, old_indices)
 
-    triplets_dataset = TripletsDataset(X, y, embs, cfg.max_triplets)
+    triplets_dataset = TripletsDataset(sliced_dataset.X[indices], sliced_dataset.y[indices], embs[indices], cfg.max_triplets)
     triplets_loader = torch.utils.data.DataLoader(dataset=triplets_dataset,
                                                   batch_size=cfg.batch_size,
                                                   shuffle=True,
@@ -94,13 +98,44 @@ class PretraingDataset(torch.utils.data.Dataset):
         return X_weak, targets_weak, target_masks_weak, X_strong, targets_strong, target_masks_strong, label
 
 
+class SlicesDataset(torch.utils.data.Dataset):
+    def __init__(self, X: np.ndarray, y: np.ndarray, window_size: int):
+        super(SlicesDataset, self).__init__()
+
+        self.window_size = window_size
+        self.X = X  # (N, features)
+        self.y = y  # (N,)
+
+        nmax = self.X.shape[0] // window_size * window_size
+        self.X = self.X[:nmax]
+        self.y = self.y[:nmax]
+
+        self.X = self.X.reshape(-1, self.window_size, self.X.shape[-1])
+        self.y = self.y.reshape(-1, self.window_size)
+
+        self.X = torch.FloatTensor(self.X)
+        self.y = torch.FloatTensor(self.y)
+
+    def __len__(self):
+        return self.X.shape[0]
+
+    def __getitem__(self, idx):
+        return self.X[idx], self.y[idx]
+
+
 class TripletsDataset(torch.utils.data.Dataset):
     def __init__(self, X, y, embs, max_triplets, metric='euclidean'):
-        self.X = X
-        self.idxs_triplets = torch.IntTensor()
-        triplet_distances = torch.FloatTensor()
+        super().__init__()
 
-        distance_matrix = torch.zeros((X.shape[0], X.shape[0], embs.shape[1]))
+        self.X = X
+        self.y = y
+
+        self.y = torch.mode(self.y, dim=-1).values
+
+        self.idxs_triplets = torch.IntTensor()
+        self.triplet_distances = torch.FloatTensor()
+
+        distance_matrix = torch.zeros((X.shape[0], X.shape[0]))
 
         # 1. calculate pairwise distance
         for i in range(X.shape[0]):
@@ -113,9 +148,9 @@ class TripletsDataset(torch.utils.data.Dataset):
                     raise ValueError(f'got unexpected distance metric: {metric}')
 
         # 2. construct, filter and sort triplet indices
-        for l in torch.unique(y):
-            positive_idxs = torch.arange(y.shape[0])[y == l]
-            negative_idxs = torch.arange(y.shape[0])[y != l]
+        for l in torch.unique(self.y):
+            positive_idxs = (self.y == l).nonzero()
+            negative_idxs = (self.y != l).nonzero()
 
             for aidx in positive_idxs:
                 for pidx in positive_idxs[aidx+1:]:
@@ -127,39 +162,47 @@ class TripletsDataset(torch.utils.data.Dataset):
                     triplet_distances_ = an_distances - ap_distance
 
                     # we select semi-hard triplets to make training process more stable
-                    an_pairs = an_pairs[triplet_distances_ > 0]
+                    an_pairs = an_pairs[triplet_distances_[:, 0] > 0, :]
                     triplet_distances_ = triplet_distances_[triplet_distances_ > 0]
 
-                    self.idxs_triplets = torch.cat([self.idxs_triplets, torch.IntTensor((aidx, pidx, ni) for ni in an_pairs[:, 1])])
+                    self.idxs_triplets = torch.cat([self.idxs_triplets, torch.IntTensor([[aidx, pidx, ni] for ni in an_pairs[:, 1]])])
                     self.triplet_distances = torch.cat([self.triplet_distances, triplet_distances_])
 
-        # 3. take N best
-        self.idxs_triplets = self.idxs_triplets[torch.argsort(triplet_distances)][:max_triplets]
+        # 3. take N best (N smallest abs values)
+        self.idxs_triplets = self.idxs_triplets[torch.argsort(torch.abs(self.triplet_distances))][:max_triplets]
 
     def __getitem__(self, idx):
         aidx, pidx, nidx = self.idxs_triplets[idx]
         return self.X[aidx], self.X[pidx], self.X[nidx]
 
+    def __len__(self):
+        return len(self.idxs_triplets)
+
 
 def select_samples_to_label(embs, clustering_labels, number_samples_to_select, old_indices):
     unique_clusters, cluster_sizes = np.unique(clustering_labels, return_counts=True)
+    cluster_sizes = cluster_sizes[unique_clusters >= 0]
+    unique_clusters = unique_clusters[unique_clusters >= 0]
 
-    samples_indices = set()
-    while len(samples_indices < number_samples_to_select):
+    samples_indices = list()
+    while len(samples_indices) < number_samples_to_select:
         cluster = np.random.choice(unique_clusters, p=cluster_sizes/sum(cluster_sizes))
 
-        cluster_samples = embs[clustering_labels == cluster]
-        cluster_indices = np.where(clustering_labels == cluster)
+        cluster_indices = np.where(clustering_labels == cluster)[0]
+        cluster_indices = np.setdiff1d(cluster_indices, old_indices)
+        cluster_indices = np.setdiff1d(cluster_indices, samples_indices)
+        cluster_samples = embs[cluster_indices]
 
-        cluster_mean = cluster_samples.mean()
-        cluster_std = cluster_samples.std()
+        cluster_mean = torch.mean(cluster_samples)
+        cluster_std = torch.std(cluster_samples)
 
-        probs = [scipy.stats.norm.pdf(s.mean(), cluster_mean, cluster_std) for s in cluster_samples]
+        probs = [scipy.stats.norm.pdf(torch.mean(s), cluster_mean, cluster_std) for s in cluster_samples]
+        probs /= sum(probs)
+
         selected_index = np.random.choice(cluster_indices, p=probs)
-        if selected_index not in old_indices:
-            samples_indices.add(selected_index)
+        samples_indices.append(selected_index)
 
-    return np.array(samples_indices | set(old_indices))
+    return np.concatenate([samples_indices, old_indices]).astype(int)
 
 
 class TrainingDataset(torch.utils.data.Dataset):
