@@ -1,6 +1,12 @@
-# SensorSCAN: Self-Supervised Learning and Deep Clustering for Fault Diagnosis in Chemical Processes
+# SensorDBSCAN: Semi-Supervised Learning for Fault Diagnosis in Chemical Processes
 
-This repository is the official implementation of methods from the paper [SensorSCAN: Self-Supervised Learning and Deep Clustering for Fault Diagnosis in Chemical Processes](https://www.sciencedirect.com/science/article/abs/pii/S0004370223001583).
+This repository is the modified official implementation of methods from the paper [SensorSCAN: Self-Supervised Learning and Deep Clustering for Fault Diagnosis in Chemical Processes](https://www.sciencedirect.com/science/article/abs/pii/S0004370223001583).
+
+## Our modifications
+
+* Changed second learning stage from Deep Clustering to semi-supervised encoder training with triplet loss (to make clusters separable) with DBSCAN applied later (so we don't have to specify number of clusters and could use margin from triplet loss to estimate epsilon for DBSCAN)
+* Added active learning for semi-supervised learning (data sampling for labeling and triplets sampling for training)
+* Added intermediate clusteing quality evaluation mechanism to estimate moment when we should sample more data
 
 ## Requirements
 
@@ -35,6 +41,7 @@ Results on `rieth_tep`
 |`st_catgan`|0.1754|0.1135|0.2223|0.3044|0.0000|0.3238|102.63|
 |`convae`|0.1794|0.1565|0.2537|0.3631|0.0008|0.3664|164.76|
 |`sensorscan`|0.5926|0.4747|0.6812|0.7316|0.0014|0.7351|57.15|
+|`sensordbscan`|?|?|?|?|?|?|?|
 
 Results on `reinartz_tep`
 
@@ -44,19 +51,4 @@ Results on `reinartz_tep`
 |`st_catgan`|0.3016|0.1287|0.3606|0.3627|0.0001|0.8882|135.04|
 |`convae`|0.4975|0.2381|0.5863|0.6023|0.0016|0.9402|155.16|
 |`sensorscan`|0.5287|0.3336|0.7551|0.9013|0.0002|0.7219|30.98|
-
-## Citation
-
-Please cite our paper as follows:
-
-```
-@article{golyadkin2023sensorscan,
-  title={SensorSCAN: Self-supervised learning and deep clustering for fault diagnosis in chemical processes},
-  author={Golyadkin, Maksim and Pozdnyakov, Vitaliy and Zhukov, Leonid and Makarov, Ilya},
-  journal={Artificial Intelligence},
-  volume={324},
-  pages={104012},
-  year={2023},
-  publisher={Elsevier}
-}
-```
+|`sensordbscan`|?|?|?|?|?|?|?|
