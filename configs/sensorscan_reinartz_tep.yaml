@@ -27,7 +27,7 @@ pretraining:
   dataset_name: ${dataset}
   dataset_window_size: 300
   step_size: 1
-  train_batch_size: 1280
+  train_batch_size: 1024
   visualize_batch_size: 256
   num_features: 30
 
@@ -55,7 +55,7 @@ pretraining:
   contrastive_weight: 0.7
   epochs: 7
 
-  device: 'cuda'
+  device:
 
 epochs: 6
 clustering_finetuning_epochs: 7
@@ -71,9 +71,4 @@ neighbour_dataset_size: 140000
 num_neighbors: 7
 scan_batch_size: 128
 
-device: 'cuda'
-batch_size: 128
-metric: 'euclidean'
-epsilon: 0.2
-max_triplets: 10240
-n_samples_to_select: 100
+device:

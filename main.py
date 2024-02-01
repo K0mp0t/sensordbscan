@@ -1,9 +1,10 @@
 import hydra
-from models import pca_kmeans, st_catgan, convae, sensorscan
+from models import pca_kmeans, st_catgan, convae, sensorscan, sensordbscan
 from utils import weighted_max_occurence, print_clustering, print_fdd
 import logging
 from fddbenchmark import FDDEvaluator
 import pandas as pd
+import numpy as np
 
 
 @hydra.main(version_base=None, config_path="configs")
@@ -16,7 +17,9 @@ def main(cfg):
     elif cfg.model == 'convae':
         train_pred, train_label, test_pred, test_label = convae.run(cfg) 
     elif cfg.model == 'sensorscan':
-        train_pred, train_label, test_pred, test_label = sensorscan.run(cfg) 
+        train_pred, train_label, test_pred, test_label = sensorscan.run(cfg)
+    elif cfg.model == 'sensordbscan':
+        train_pred, train_label, test_pred, test_label = sensordbscan.run(cfg)
     else:
         raise NotImplementedError
 
@@ -27,6 +30,8 @@ def main(cfg):
     elif cfg.dataset == 'reinartz_tep':
         n_types = 29
 
+    logging.info(f'Got {np.unique(test_pred).shape[0]} clusters')
+
     logging.info('Calculating clustering metrics')
     evaluator = FDDEvaluator(step_size=cfg.step_size)
     metrics = evaluator.evaluate(test_label, test_pred)
@@ -35,7 +40,6 @@ def main(cfg):
     logging.info('Creating label matching')
     label_matching = weighted_max_occurence(train_label, train_pred, n_types)
 
-    # TODO: fix here. Looks like theres a diversity between predicted set of clusters and labels (e.g. number of unique clusters in predicted is bigger than label clusters)
     test_pred = pd.Series(label_matching[test_pred], index=test_pred.index)
     logging.info('Calculating FDD metrics')
     evaluator = FDDEvaluator(step_size=cfg.step_size)

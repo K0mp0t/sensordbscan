@@ -7,23 +7,39 @@ def build_pretraining_optim(cfg, model):
     ntx_loss = NTXentLoss(cfg.device, cfg.train_batch_size)
 
     def loss_fn(prediction, y, mask, embedings_weak, embedings_strong):
-        return l2_loss(prediction, y, mask) + cfg.contrastive_weight *  ntx_loss(embedings_weak, embedings_strong)
+        return l2_loss(prediction, y, mask) + cfg.contrastive_weight * ntx_loss(embedings_weak, embedings_strong)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr = cfg.lr, weight_decay= cfg.weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
 
     return loss_fn, optimizer
+
 
 def build_scan_optim(cfg, encoder, clustering_model):
     loss_fn = SCANLoss(cfg.entropy_weight)
 
-    encoder_optimizer = torch.optim.Adam(encoder.parameters(), lr = cfg.encoder_lr)
-    clustering_optimizer = torch.optim.Adam(clustering_model.parameters(), lr = cfg.clustering_lr)
+    encoder_optimizer = torch.optim.Adam(encoder.parameters(), lr=cfg.encoder_lr)
+    clustering_optimizer = torch.optim.Adam(clustering_model.parameters(), lr=cfg.clustering_lr)
 
     return loss_fn, encoder_optimizer, clustering_optimizer
 
+
+def build_triplet_optim(cfg, model):
+    if cfg.metric == 'euclidean':
+        distance_fn = torch.dist
+    elif cfg.metric == 'cosine':
+        distance_fn = torch.nn.functional.cosine_similarity
+    else:
+        raise ValueError(f'got unexpected distance metric: {cfg.metric}')
+
+    loss_fn = torch.nn.TripletMarginWithDistanceLoss(margin=cfg.epsilon, distance_function=None)
+    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.encoder_lr)
+
+    return loss_fn, optimizer
+
+
 class MaskedMSELoss(torch.nn.Module):
 
-    def __init__(self, reduction: str = 'mean'):
+    def __init__(self, reduction: str='mean'):
 
         super().__init__()
 

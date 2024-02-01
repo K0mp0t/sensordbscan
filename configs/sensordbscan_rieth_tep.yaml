@@ -3,7 +3,7 @@ hydra:
     dir: results/${model}_${dataset}_${now:%Y_%m_%d_%H_%M_%S}
 
 # Name of a model.
-model: "sensorscan"
+model: "sensordbscan"
 
 # Name of a dataset.
 dataset: "rieth_tep"
@@ -71,4 +71,10 @@ neighbour_dataset_size: 140000
 num_neighbors: 5
 scan_batch_size: 128
 
-device:
+device: 'cuda'
+batch_size: 128
+metric: 'euclidean'
+epsilon: 1
+max_triplets: 65536
+n_samples_to_select: 100
+ch_score_momentum: 0.9

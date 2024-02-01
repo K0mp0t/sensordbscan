@@ -1,9 +1,10 @@
 import torch
 import numpy as np
-from models.sensorscan.data_utils import build_pretraining_dataloader, build_neighbour_loader
-from models.sensorscan.model import build_encoder, build_clustering, SensorSCAN
-from models.sensorscan.optim import build_pretraining_optim, build_scan_optim
-from models.sensorscan.train_utils import train_ssl_epoch, train_scan_epoch
+import os
+from models.sensordbscan.data_utils import build_pretraining_dataloader, build_neighbour_loader, build_triplets_loader, SlicesDataset
+from models.sensordbscan.model import build_encoder, build_clustering, SensorSCAN, SensorDBSCAN
+from models.sensordbscan.optim import build_pretraining_optim, build_scan_optim, build_triplet_optim
+from models.sensordbscan.train_utils import train_ssl_epoch, train_scan_epoch, train_triplet_epoch
 from tqdm.auto import tqdm
 import pandas as pd
 from fddbenchmark import FDDDataset, FDDDataloader
@@ -58,39 +59,45 @@ def run(cfg):
     )
 
     if cfg.path_to_model is None:
-        logging.info('Pretraining encoder')
-        # pretraining
-        pretraining_loader = build_pretraining_dataloader(cfg.pretraining)
         encoder = build_encoder(cfg.pretraining)
-        loss_fn, optimizer = build_pretraining_optim(cfg.pretraining, encoder)
-        for epoch in range(cfg.pretraining.epochs):
-            avg_loss = train_ssl_epoch(cfg.pretraining, encoder, pretraining_loader, loss_fn, optimizer)
-            print(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
+        if os.path.exists('./saved_models/pretrained_encoder.pt'):
+            logging.info('Using pretrained encoder')
+            encoder.load_state_dict(torch.load('./saved_models/pretrained_encoder.pt'))
+        else:
+            logging.info('Pretraining encoder')
+            pretraining_loader = build_pretraining_dataloader(cfg.pretraining)
+            loss_fn, optimizer = build_pretraining_optim(cfg.pretraining, encoder)
+            for epoch in range(cfg.pretraining.epochs):
+                avg_loss = train_ssl_epoch(cfg.pretraining, encoder, pretraining_loader, loss_fn, optimizer)
+                logging.info(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
 
-        logging.info('Training SCAN')
-        # scan training
-        neighbor_loader = build_neighbour_loader(cfg, encoder)
-        clustering_model = build_clustering(cfg)
-        loss_fn, encoder_optimizer, clustering_optimizer = build_scan_optim(cfg, encoder, clustering_model)
+            torch.save(encoder.state_dict(), './saved_models/pretrained_encoder.pt')
+
+        logging.info('Training encoder with triplet loss')
+        indices = list()
+        ch_scores = list()
+        slices_dataset = SlicesDataset(dataset.df.to_numpy(), dataset.label.to_numpy(), cfg.window_size)
+        loss_fn, optimizer = build_triplet_optim(cfg, encoder)
         for epoch in range(cfg.epochs):
-            avg_loss = train_scan_epoch(cfg, epoch, encoder, clustering_model, neighbor_loader, loss_fn, encoder_optimizer, clustering_optimizer)
-            print(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
+            triplets_loader, indices, ch_scores = build_triplets_loader(cfg, slices_dataset, encoder, indices, ch_scores)
+            avg_loss = train_triplet_epoch(cfg, encoder, triplets_loader, loss_fn, optimizer)
+            logging.info(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
 
-        sensorscan = SensorSCAN(encoder, clustering_model, device=cfg.device)
-        cfg.path_to_model = f'saved_models/sensorscan_{dataset_name}.pth'
-        torch.save(sensorscan.state_dict(), cfg.path_to_model)
-    
-    sensorscan = SensorSCAN(build_encoder(cfg.pretraining), build_clustering(cfg), device=cfg.device)
-    sensorscan.load_state_dict(torch.load(cfg.path_to_model, map_location=cfg.device))
+        cfg.path_to_model = f'saved_models/sensordbscan_encoder_{dataset_name}.pth'
+        torch.save(encoder.state_dict(), cfg.path_to_model)
+
+    encoder = build_encoder(cfg.pretraining)
+    encoder.load_state_dict(torch.load(cfg.path_to_model, map_location=cfg.device))
+
+    sensordbscan = SensorDBSCAN(encoder, cfg)
 
     logging.info('Getting predictions on train')
-    sensorscan.eval()
+    encoder.eval()
     train_pred = []
     train_label = []
     for X, time_index, label in tqdm(train_loader, desc='Getting predictions on train'):
-        with torch.no_grad():
-            X = torch.FloatTensor(X).to(cfg.device)
-            pred = sensorscan(X).cpu().numpy().argmax(1)
+        X = torch.FloatTensor(X).to(cfg.device)
+        pred = sensordbscan(X)
         train_pred.append(pd.Series(pred, index=time_index))
         train_label.append(pd.Series(label, index=time_index))
     train_pred = pd.concat(train_pred)
@@ -100,9 +107,8 @@ def run(cfg):
     test_pred = []
     test_label = []
     for X, time_index, label in tqdm(test_loader, desc='Getting predictions on test'):
-        with torch.no_grad():
-            X = torch.FloatTensor(X).to(cfg.device)
-            pred = sensorscan(X).cpu().numpy().argmax(1)
+        X = torch.FloatTensor(X).to(cfg.device)
+        pred = sensordbscan(X)
         test_pred.append(pd.Series(pred, index=time_index))
         test_label.append(pd.Series(label, index=time_index))
     test_label = pd.concat(test_label).astype('int')
