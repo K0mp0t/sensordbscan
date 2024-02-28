@@ -20,7 +20,7 @@ def build_pretraining_dataloader(cfg):
                                                    batch_size=cfg.train_batch_size,
                                                    shuffle=True,
                                                    drop_last=False,
-                                                   num_workers=6, pin_memory=True)
+                                                   num_workers=4, pin_memory=False)
 
     return train_dataloader
 
@@ -44,41 +44,45 @@ def build_neighbour_loader(cfg, encoder):
     return neighbor_loader
 
 
-def build_triplets_loader(cfg, sliced_dataset, model, indices, ch_scores):
-    # dataset = _build_fdd_dataset(cfg.pretraining, False)
-    dataloader = torch.utils.data.DataLoader(sliced_dataset, batch_size=cfg.eval_batch_size, shuffle=False,
-                                             num_workers=6, pin_memory=True)
-    logging.info('Calculating embeddings')
+def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch):
+    dataloader = torch.utils.data.DataLoader(slices_dataset, batch_size=cfg.eval_batch_size, shuffle=False,
+                                             num_workers=4, pin_memory=False)
+
+    logging.info(f'Epoch #{epoch}. Calculating embeddings')
     embs = list()
-    for X, _ in dataloader:
+    ys = list()
+    for X, y in tqdm(dataloader):
         with torch.no_grad():
             pad_mask = torch.ones(*X.shape[:-1], dtype=torch.bool, device=cfg.device)
             pred = model(X.to(cfg.device), pad_mask)
             embs.append(pred[1])
+            ys.append(y)
 
-    logging.info('Clustering embeddings')
+    logging.info(f'Epoch #{epoch}. Clustering embeddings')
     embs = torch.cat(embs, dim=0)
     clustering_labels = DBSCAN(cfg.epsilon).fit_predict(embs.cpu().numpy())
+
+    outliers_factor = np.sum(clustering_labels == -1) / embs.shape[0]
     score = calinski_harabasz_score(embs.detach().cpu().numpy(), clustering_labels)
     nclusters = np.unique(clustering_labels).shape[0]
 
-    logging.info(f'Calinski-Harabasz score: {round(score, 2)}, #clusters: {nclusters}')
+    logging.info(f'Epoch #{epoch}. Calinski-Harabasz score: {round(score, 2)}, #clusters: {nclusters}, outliers factor: {round(outliers_factor, 2)}')
 
     if nclusters < 50:
-        visualize_clustering(embs.cpu().numpy(), clustering_labels)
+        visualize_clustering(embs.cpu().numpy(), clustering_labels, ys)
 
     if len(ch_scores) < 1 or score * cfg.ch_score_momentum < ch_scores[-1]:
-        indices = select_samples_to_label(embs.cpu(), clustering_labels, cfg.n_samples_to_select, indices)
+        indices = select_samples_to_label(embs.cpu(), clustering_labels, cfg.n_samples_to_select, indices, epoch)
 
     ch_scores.append(score)
 
-    logging.info('Building triplets loader')
+    logging.info(f'Epoch #{epoch}. Building triplets loader')
 
-    triplets_dataset = TripletsDataset(sliced_dataset.X[indices], sliced_dataset.y[indices], embs[indices], cfg)
+    triplets_dataset = TripletsDataset(slices_dataset.X[indices], slices_dataset.y[indices], embs[indices], cfg)
     triplets_loader = torch.utils.data.DataLoader(dataset=triplets_dataset,
                                                   batch_size=cfg.batch_size,
                                                   shuffle=True,
-                                                  num_workers=6, pin_memory=True)
+                                                  num_workers=4, pin_memory=False)
 
     return triplets_loader, indices, ch_scores
 
@@ -114,28 +118,33 @@ class PretraingDataset(torch.utils.data.Dataset):
 
 
 class SlicesDataset(torch.utils.data.Dataset):
-    def __init__(self, X: np.ndarray, y: np.ndarray, window_size: int):
+    def __init__(self, X: pd.DataFrame, y: np.ndarray, window_size: int, step_size: int):
         super(SlicesDataset, self).__init__()
 
         self.window_size = window_size
-        self.X = X  # (N, features)
-        self.y = y  # (N,)
 
-        nmax = self.X.shape[0] // window_size * window_size
-        self.X = self.X[:nmax]
-        self.y = self.y[:nmax]
+        self.X = X
+        self.y = y
+        self.windows_end_indices = list()
 
-        self.X = self.X.reshape(-1, self.window_size, self.X.shape[-1])
-        self.y = self.y.reshape(-1, self.window_size)
+        for run_id in X.index.get_level_values(0).unique():
+            indices = np.array(X.index.get_locs([run_id]))
+            indices = indices[self.window_size - 1:]
+            indices = indices[::step_size]
+            self.windows_end_indices.extend(indices)
 
-        self.X = torch.FloatTensor(self.X)
-        self.y = torch.FloatTensor(self.y)
+        self.X = self.X.to_numpy()
+        self.y = self.y.to_numpy()
 
     def __len__(self):
-        return self.X.shape[0]
+        return len(self.windows_end_indices)
 
     def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+        window_end_idx = self.windows_end_indices[idx]
+        X_window = self.X[window_end_idx - self.window_size + 1:window_end_idx + 1]
+        y_window = self.y[window_end_idx - self.window_size + 1:window_end_idx + 1]
+        y = torch.mode(torch.FloatTensor(y_window), dim=-1).values.max(dim=-1)
+        return torch.FloatTensor(X_window), y
 
 
 class TripletsDataset(torch.utils.data.Dataset):
@@ -144,8 +153,6 @@ class TripletsDataset(torch.utils.data.Dataset):
 
         self.X = X
         self.y = y
-
-        self.y = torch.mode(self.y, dim=-1).values
 
         self.idxs_triplets = torch.IntTensor()
         self.triplet_distances = torch.FloatTensor()
@@ -197,12 +204,12 @@ class TripletsDataset(torch.utils.data.Dataset):
         return len(self.idxs_triplets)
 
 
-def select_samples_to_label(embs, clustering_labels, number_samples_to_select, old_indices):
-    logging.info(f'Selecting {number_samples_to_select} samples to label')
+def select_samples_to_label(embs, clustering_labels, number_samples_to_select, old_indices, epoch):
+    logging.info(f'Epoch #{epoch}. Selecting {number_samples_to_select} samples to label')
 
     unique_clusters, cluster_sizes = np.unique(clustering_labels, return_counts=True)
-    cluster_sizes = cluster_sizes[unique_clusters >= 0]
-    unique_clusters = unique_clusters[unique_clusters >= 0]
+    # cluster_sizes = cluster_sizes[unique_clusters >= 0]
+    # unique_clusters = unique_clusters[unique_clusters >= 0]
 
     samples_indices = list()
     for _ in trange(number_samples_to_select):
@@ -216,13 +223,14 @@ def select_samples_to_label(embs, clustering_labels, number_samples_to_select, o
         cluster_mean = torch.mean(cluster_samples)
         cluster_std = torch.std(cluster_samples)
 
+        # pdf construction is slow here
         probs = [scipy.stats.norm.pdf(torch.mean(s), cluster_mean, cluster_std) for s in cluster_samples]
         probs /= sum(probs)
 
         selected_index = np.random.choice(cluster_indices, p=probs)
         samples_indices.append(selected_index)
 
-    visualize_selected_for_labelling(embs, samples_indices)
+    # visualize_selected_for_labelling(embs, samples_indices)
 
     return np.concatenate([samples_indices, old_indices]).astype(int)
 

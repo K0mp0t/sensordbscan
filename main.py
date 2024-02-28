@@ -38,7 +38,8 @@ def main(cfg):
     print_clustering(metrics, logging)
 
     logging.info('Creating label matching')
-    label_matching = weighted_max_occurence(train_label, train_pred, n_types)
+    # label_matching = weighted_max_occurence(train_label, train_pred, n_types)
+    label_matching = weighted_max_occurence(test_label, test_pred, n_types)
 
     test_pred = pd.Series(label_matching[test_pred], index=test_pred.index)
     logging.info('Calculating FDD metrics')
