@@ -3,7 +3,11 @@ matplotlib.use('TkAgg')
 
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA, TruncatedSVD
-from sklearn.manifold import TSNE
+# from sklearn.manifold import TSNE
+from cuml import TSNE
+
+# TODO: union clustering and sampling visualization, add plots saving to file
+# Current version is too heavy, matplotlib doesnt display anything so I've switched visualization off
 
 
 def show_fig_with_timer(fig, interval):
@@ -17,10 +21,10 @@ def show_fig_with_timer(fig, interval):
     plt.show()
 
 
-def visualize_clustering(embs, clustering_labels, gt_labels):
+def visualize_clustering(embs, clustering_labels, gt_labels, cfg):
     pca_decomposed = PCA(n_components=2).fit_transform(embs)
     svd_decomposed = TruncatedSVD(n_components=2).fit_transform(embs)
-    tsne_decomposed = TSNE(n_components=2).fit_transform(embs)
+    tsne_decomposed = TSNE(n_components=2, perplexity=5, metric=cfg.metric, method='fft').fit_transform(embs)
 
     fig, axes = plt.subplots(ncols=3, nrows=2, figsize=(15, 12))
 

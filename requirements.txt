@@ -12,3 +12,4 @@ scikit-learn~=1.3.2
 pandas~=2.0.3
 scipy~=1.10.1
 matplotlib~=3.7.2
+cuml~=24.02.00

@@ -99,28 +99,26 @@ def run(cfg):
 
     logging.info('Getting predictions on train')
     encoder.eval()
-    # train_embs = []
+    train_embs = []
     train_label = []
     for X, time_index, label in tqdm(train_loader, desc='Getting predictions on train'):
-        # X = torch.FloatTensor(X).to(cfg.device)
-        # pred = sensordbscan(X).detach().cpu()
-        # train_embs.append(pred)
+        X = torch.FloatTensor(X).to(cfg.device)
+        pred = sensordbscan.get_embs(X).detach().cpu()
+        train_embs.append(pred)
         train_label.append(pd.Series(label, index=time_index))
     #
-    # train_embs = torch.cat(train_embs, dim=0)
+    train_embs = torch.cat(train_embs, dim=0).to('cpu')
     train_label = pd.concat(train_label).astype('int')
 
-    train_pred = pd.Series(np.zeros(train_label.shape[0]), index=train_label.index)
-
-    # train_pred = sensordbscan.cluster_embs(train_embs)
-    # train_pred = pd.Series(train_pred, index=train_label.index)
+    train_pred = sensordbscan.cluster_embs(train_embs)
+    train_pred = pd.Series(train_pred, index=train_label.index)
 
     logging.info('Getting predictions on test')
     test_embs = []
     test_label = []
     for X, time_index, label in tqdm(test_loader, desc='Getting predictions on test'):
         X = torch.FloatTensor(X).to(cfg.device)
-        pred = sensordbscan(X).detach().cpu()
+        pred = sensordbscan.get_embs(X).detach().cpu()
         test_embs.append(pred)
         test_label.append(pd.Series(label, index=time_index))
 

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
-from sklearn.cluster import DBSCAN
+from cuml.cluster import DBSCAN
+# from sklearn.cluster import DBSCAN
 from sklearn.metrics import calinski_harabasz_score
 from sklearn.neighbors import NearestNeighbors
 import torch
@@ -20,7 +21,7 @@ def build_pretraining_dataloader(cfg):
                                                    batch_size=cfg.train_batch_size,
                                                    shuffle=True,
                                                    drop_last=False,
-                                                   num_workers=4, pin_memory=False)
+                                                   num_workers=4, pin_memory=True)
 
     return train_dataloader
 
@@ -46,7 +47,7 @@ def build_neighbour_loader(cfg, encoder):
 
 def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch):
     dataloader = torch.utils.data.DataLoader(slices_dataset, batch_size=cfg.eval_batch_size, shuffle=False,
-                                             num_workers=4, pin_memory=False)
+                                             num_workers=4, pin_memory=True)
 
     logging.info(f'Epoch #{epoch}. Calculating embeddings')
     embs = list()
@@ -56,11 +57,11 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
             pad_mask = torch.ones(*X.shape[:-1], dtype=torch.bool, device=cfg.device)
             pred = model(X.to(cfg.device), pad_mask)
             embs.append(pred[1])
-            ys.append(y)
+            ys.extend(y.cpu().numpy().tolist())
 
     logging.info(f'Epoch #{epoch}. Clustering embeddings')
     embs = torch.cat(embs, dim=0)
-    clustering_labels = DBSCAN(cfg.epsilon).fit_predict(embs.cpu().numpy())
+    clustering_labels = DBSCAN(eps=cfg.epsilon, min_samples=cfg.min_samples).fit_predict(embs.cpu().numpy())
 
     outliers_factor = np.sum(clustering_labels == -1) / embs.shape[0]
     score = calinski_harabasz_score(embs.detach().cpu().numpy(), clustering_labels)
@@ -68,21 +69,25 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
 
     logging.info(f'Epoch #{epoch}. Calinski-Harabasz score: {round(score, 2)}, #clusters: {nclusters}, outliers factor: {round(outliers_factor, 2)}')
 
-    if nclusters < 50:
-        visualize_clustering(embs.cpu().numpy(), clustering_labels, ys)
+    # if nclusters < 50:
+    #     visualize_clustering(embs.cpu().numpy(), clustering_labels, ys, cfg)
 
-    if len(ch_scores) < 1 or score * cfg.ch_score_momentum < ch_scores[-1]:
+    if len(ch_scores) < 1 or score * cfg.ch_score_momentum < ch_scores[-1] or outliers_factor > 0.01:
         indices = select_samples_to_label(embs.cpu(), clustering_labels, cfg.n_samples_to_select, indices, epoch)
+        indices = torch.IntTensor(indices).to('cpu')
 
     ch_scores.append(score)
 
     logging.info(f'Epoch #{epoch}. Building triplets loader')
 
-    triplets_dataset = TripletsDataset(slices_dataset.X[indices], slices_dataset.y[indices], embs[indices], cfg)
+    X_ = torch.stack([slices_dataset[i][0] for i in indices], dim=0).to('cpu')
+    y_ = torch.IntTensor([slices_dataset[i][1] for i in indices]).to('cpu')
+
+    triplets_dataset = TripletsDataset(X_, y_, embs[indices].to('cpu'), cfg)
     triplets_loader = torch.utils.data.DataLoader(dataset=triplets_dataset,
                                                   batch_size=cfg.batch_size,
                                                   shuffle=True,
-                                                  num_workers=4, pin_memory=False)
+                                                  num_workers=4, pin_memory=True)
 
     return triplets_loader, indices, ch_scores
 
@@ -118,7 +123,7 @@ class PretraingDataset(torch.utils.data.Dataset):
 
 
 class SlicesDataset(torch.utils.data.Dataset):
-    def __init__(self, X: pd.DataFrame, y: np.ndarray, window_size: int, step_size: int):
+    def __init__(self, X: pd.DataFrame, y: pd.Series, window_size: int, step_size: int):
         super(SlicesDataset, self).__init__()
 
         self.window_size = window_size
@@ -133,8 +138,10 @@ class SlicesDataset(torch.utils.data.Dataset):
             indices = indices[::step_size]
             self.windows_end_indices.extend(indices)
 
-        self.X = self.X.to_numpy()
-        self.y = self.y.to_numpy()
+        self.windows_end_indices = torch.IntTensor(self.windows_end_indices)
+        self.X = torch.FloatTensor(self.X.to_numpy())
+        self.y = torch.IntTensor(self.y.to_numpy())
+
 
     def __len__(self):
         return len(self.windows_end_indices)
@@ -143,7 +150,7 @@ class SlicesDataset(torch.utils.data.Dataset):
         window_end_idx = self.windows_end_indices[idx]
         X_window = self.X[window_end_idx - self.window_size + 1:window_end_idx + 1]
         y_window = self.y[window_end_idx - self.window_size + 1:window_end_idx + 1]
-        y = torch.mode(torch.FloatTensor(y_window), dim=-1).values.max(dim=-1)
+        y = torch.mode(y_window, dim=-1).values.max(dim=-1).values.item()
         return torch.FloatTensor(X_window), y
 
 
@@ -172,8 +179,11 @@ class TripletsDataset(torch.utils.data.Dataset):
 
         # 2. construct, filter and sort triplet indices
         for l in torch.unique(self.y):
-            positive_idxs = (self.y == l).nonzero()
-            negative_idxs = (self.y != l).nonzero()
+            positive_idxs = (self.y == l).nonzero()[:, 0]
+            negative_idxs = (self.y != l).nonzero()[:, 0]
+
+            positive_idxs = positive_idxs.to('cpu')
+            negative_idxs = negative_idxs.to('cpu')
 
             for aidx in positive_idxs:
                 for pidx in positive_idxs[aidx+1:]:
@@ -182,10 +192,9 @@ class TripletsDataset(torch.utils.data.Dataset):
                     an_distances = distance_matrix[aidx, negative_idxs]
 
                     triplet_distances_ = an_distances - ap_distance
-                    triplet_distances_ = triplet_distances_[:, 0]
 
                     # we select semi-hard triplets to make training process more stable
-                    negative_idxs = negative_idxs[triplet_distances_ > 0, :]
+                    negative_idxs = negative_idxs[triplet_distances_ > 0]
                     triplet_distances_ = triplet_distances_[triplet_distances_ > 0]
                     # negative_idxs = negative_idxs[triplet_distances_ < cfg.epsilon * 2, :]
                     # triplet_distances_ = triplet_distances_[triplet_distances_ < cfg.epsilon * 2]
@@ -224,7 +233,8 @@ def select_samples_to_label(embs, clustering_labels, number_samples_to_select, o
         cluster_std = torch.std(cluster_samples)
 
         # pdf construction is slow here
-        probs = [scipy.stats.norm.pdf(torch.mean(s), cluster_mean, cluster_std) for s in cluster_samples]
+        #probs = [scipy.stats.norm.pdf(torch.mean(s), cluster_mean, cluster_std) for s in cluster_samples]
+        probs = scipy.stats.norm.pdf(torch.mean(cluster_samples, dim=-1), cluster_mean, cluster_std)
         probs /= sum(probs)
 
         selected_index = np.random.choice(cluster_indices, p=probs)
