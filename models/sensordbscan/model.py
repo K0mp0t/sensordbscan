@@ -201,5 +201,4 @@ class SensorDBSCAN(object):
         return embs
 
     def cluster_embs(self, embs):
-        clustering_output = self.clustering_algorithm(eps=self.cfg.epsilon, min_samples=self.cfg.min_samples).fit_predict(embs.detach().cpu().numpy())
-        return clustering_output
+        return self.clustering_algorithm(eps=self.cfg.epsilon, min_samples=self.cfg.min_samples).fit_predict(embs)

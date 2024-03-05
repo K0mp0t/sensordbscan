@@ -9,7 +9,7 @@ from fddbenchmark import FDDDataloader, FDDDataset
 from tqdm import tqdm, trange
 import scipy
 import logging
-from models.sensordbscan.visualization_utils import visualize_selected_for_labelling, visualize_clustering
+from models.sensordbscan.visualization_utils import visualization_wrapper
 
 
 def build_pretraining_dataloader(cfg):
@@ -69,12 +69,15 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
 
     logging.info(f'Epoch #{epoch}. Calinski-Harabasz score: {round(score, 2)}, #clusters: {nclusters}, outliers factor: {round(outliers_factor, 2)}')
 
-    # if nclusters < 50:
-    #     visualize_clustering(embs.cpu().numpy(), clustering_labels, ys, cfg)
-
+    selected_indices = None
     if len(ch_scores) < 1 or score * cfg.ch_score_momentum < ch_scores[-1] or outliers_factor > 0.01:
-        indices = select_samples_to_label(embs.cpu(), clustering_labels, cfg.n_samples_to_select, indices, epoch)
-        indices = torch.IntTensor(indices).to('cpu')
+        selected_indices = select_samples_to_label(embs.cpu().numpy(), clustering_labels, cfg.n_samples_to_select, indices, epoch)
+
+    visualization_wrapper(embs.cpu().numpy(), clustering_labels, ys, selected_indices, cfg, epoch)
+
+    if selected_indices is not None:
+        indices = np.concatenate([indices, selected_indices])
+        indices = torch.IntTensor(indices)
 
     ch_scores.append(score)
 
@@ -229,20 +232,16 @@ def select_samples_to_label(embs, clustering_labels, number_samples_to_select, o
         cluster_indices = np.setdiff1d(cluster_indices, samples_indices)
         cluster_samples = embs[cluster_indices]
 
-        cluster_mean = torch.mean(cluster_samples)
-        cluster_std = torch.std(cluster_samples)
+        cluster_mean = np.mean(cluster_samples)
+        cluster_std = np.std(cluster_samples)
 
-        # pdf construction is slow here
-        #probs = [scipy.stats.norm.pdf(torch.mean(s), cluster_mean, cluster_std) for s in cluster_samples]
-        probs = scipy.stats.norm.pdf(torch.mean(cluster_samples, dim=-1), cluster_mean, cluster_std)
+        probs = scipy.stats.norm.pdf(np.mean(cluster_samples, axis=-1), cluster_mean, cluster_std)
         probs /= sum(probs)
 
         selected_index = np.random.choice(cluster_indices, p=probs)
         samples_indices.append(selected_index)
 
-    # visualize_selected_for_labelling(embs, samples_indices)
-
-    return np.concatenate([samples_indices, old_indices]).astype(int)
+    return np.array(samples_indices).astype(int)
 
 
 class TrainingDataset(torch.utils.data.Dataset):

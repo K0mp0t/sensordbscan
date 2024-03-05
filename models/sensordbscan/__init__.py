@@ -101,16 +101,18 @@ def run(cfg):
     encoder.eval()
     train_embs = []
     train_label = []
+
     for X, time_index, label in tqdm(train_loader, desc='Getting predictions on train'):
         X = torch.FloatTensor(X).to(cfg.device)
-        pred = sensordbscan.get_embs(X).detach().cpu()
+        with torch.no_grad():
+            pred = sensordbscan.get_embs(X)
         train_embs.append(pred)
         train_label.append(pd.Series(label, index=time_index))
     #
-    train_embs = torch.cat(train_embs, dim=0).to('cpu')
+    train_embs = torch.cat(train_embs, dim=0)
     train_label = pd.concat(train_label).astype('int')
 
-    train_pred = sensordbscan.cluster_embs(train_embs)
+    train_pred = sensordbscan.cluster_embs(train_embs).get()
     train_pred = pd.Series(train_pred, index=train_label.index)
 
     logging.info('Getting predictions on test')
@@ -118,14 +120,15 @@ def run(cfg):
     test_label = []
     for X, time_index, label in tqdm(test_loader, desc='Getting predictions on test'):
         X = torch.FloatTensor(X).to(cfg.device)
-        pred = sensordbscan.get_embs(X).detach().cpu()
+        with torch.no_grad():
+            pred = sensordbscan.get_embs(X)
         test_embs.append(pred)
         test_label.append(pd.Series(label, index=time_index))
 
     test_embs = torch.cat(test_embs, dim=0)
     test_label = pd.concat(test_label).astype('int')
 
-    test_pred = sensordbscan.cluster_embs(test_embs).astype('int')
+    test_pred = sensordbscan.cluster_embs(test_embs).get()
     test_pred = pd.Series(test_pred, index=test_label.index)
 
     return train_pred, train_label, test_pred, test_label
