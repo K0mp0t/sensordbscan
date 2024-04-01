@@ -9,7 +9,7 @@ from tqdm.auto import tqdm
 import pandas as pd
 from fddbenchmark import FDDDataset, FDDDataloader
 import logging
-from utils import exclude_columns, make_rieth_imbalance, normalize
+from utils import exclude_columns, make_rieth_imbalance, normalize, exclude_classes
 import gc
 
 
@@ -32,6 +32,9 @@ def run(cfg):
 
     dataset = FDDDataset(name=dataset_name)
     dataset.df = exclude_columns(dataset.df)
+
+    exclude_classes(dataset, cfg.classes)
+
     normalize(dataset)
     if dataset_name == 'rieth_tep':
         dataset.train_mask = make_rieth_imbalance(dataset.train_mask)
@@ -60,6 +63,8 @@ def run(cfg):
         shuffle=False,
     )
 
+    # TODO: improve logging: add CH score, outliers factor and number of clusters graphs
+
     if cfg.path_to_model is None:
         encoder = build_encoder(cfg.pretraining)
         if os.path.exists('./saved_models/pretrained_encoder.pt'):
@@ -78,13 +83,19 @@ def run(cfg):
         logging.info('Training encoder with triplet loss')
         indices = list()
         ch_scores = list()
-        slices_dataset = SlicesDataset(dataset.df, dataset.label, cfg.window_size, cfg.step_size)
+        slices_dataset = SlicesDataset(dataset.df, dataset.label, dataset.train_mask, cfg.window_size, cfg.step_size)
         loss_fn, optimizer = build_triplet_optim(cfg, encoder)
         for epoch in range(cfg.epochs):
             triplets_loader, indices, ch_scores = build_triplets_loader(cfg, slices_dataset, encoder, indices,
                                                                         ch_scores, epoch)
             avg_loss = train_triplet_epoch(cfg, encoder, triplets_loader, loss_fn, optimizer)
             logging.info(f'Epoch #{epoch}. loss = {avg_loss:10.8f}')
+
+        # for epoch in range(cfg.epochs, cfg.epochs+cfg.clustering_finetuning_epochs):
+        #     triplets_loader, indices, ch_scores = build_triplets_loader(cfg, slices_dataset, encoder, indices,
+        #                                                                 ch_scores, epoch)
+        #     avg_loss = train_triplet_epoch(cfg, encoder, triplets_loader, loss_fn, optimizer)
+        #     logging.info(f'Epoch #{epoch}. loss = {avg_loss:10.8f}')
 
         cfg.path_to_model = f'saved_models/sensordbscan_encoder_{dataset_name}.pth'
         torch.save(encoder.state_dict(), cfg.path_to_model)

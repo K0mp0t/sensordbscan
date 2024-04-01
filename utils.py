@@ -1,19 +1,29 @@
+from typing import Union, List
+
 import numpy as np
+from fddbenchmark import FDDDataset
+
 
 def weighted_max_occurence(true_labels, cluster_labels, n_types):
     _cluster_labels = cluster_labels.values
-    mapping = np.zeros(n_types)
+    mapping = np.zeros(n_types, dtype='int')
 
-    for cluster_label in np.unique(_cluster_labels):
-        cluster_Y = true_labels[_cluster_labels == cluster_label]
-        unique_items, unique_counts = np.unique(cluster_Y, return_counts=True)
-        
-        normal_type = np.where(unique_items == 0)[0]
-        if normal_type.size == 1 and (unique_counts[normal_type[0]] / unique_counts.sum()) > (1 / (unique_items.size + 1)):
-            mapping[cluster_label] = 0
-        else:
-            mapping[cluster_label] = np.random.choice(unique_items[unique_counts == unique_counts.max()])
-    return mapping.astype('int')
+    # for cluster_label in np.unique(_cluster_labels):
+    #     cluster_Y = true_labels[_cluster_labels == cluster_label]
+    #     unique_items, unique_counts = np.unique(cluster_Y, return_counts=True)
+    #
+    #     normal_type = np.where(unique_items == 0)[0]
+    #     if normal_type.size == 1 and (unique_counts[normal_type[0]] / unique_counts.sum()) > (1 / (unique_items.size + 1)):
+    #         mapping[cluster_label] = 0
+    #     else:
+    #         mapping[cluster_label] = np.random.choice(unique_items[unique_counts == unique_counts.max()])
+
+    for type_idx in range(n_types):
+        type_clusters = _cluster_labels[true_labels == type_idx]
+        values, counts = np.unique(type_clusters, return_counts=True)
+        mapping[type_idx] = values[np.argmax(counts)]
+
+    return mapping
 
 def exclude_columns(df):
     excl = [
@@ -25,6 +35,15 @@ def exclude_columns(df):
     ]
     columns = [c for c in df.columns if c not in excl]
     return df[columns]
+
+
+def exclude_classes(dataset: FDDDataset, classes_to_keep: Union[str, List[str]]):
+    if classes_to_keep == 'all':
+        return dataset
+
+    dataset.train_mask = dataset.train_mask & dataset.label.isin(classes_to_keep)
+    dataset.test_mask = dataset.test_mask & dataset.label.isin(classes_to_keep)
+
 
 def normalize(dataset):
     mean = dataset.df[dataset.train_mask].mean(axis = 0)

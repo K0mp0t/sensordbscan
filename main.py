@@ -23,12 +23,17 @@ def main(cfg):
     else:
         raise NotImplementedError
 
-    if cfg.dataset == 'small_tep':
-        n_types = 21
-    elif cfg.dataset == 'rieth_tep':
-        n_types = 21
-    elif cfg.dataset == 'reinartz_tep':
-        n_types = 29
+    if cfg.classes == 'all':
+        if cfg.dataset == 'small_tep':
+            n_types = 21
+        elif cfg.dataset == 'rieth_tep':
+            n_types = 21
+        elif cfg.dataset == 'reinartz_tep':
+            n_types = 29
+        else:
+            raise NotImplementedError(f'Got unknown dataset: {cfg.dataset}')
+    else:
+        n_types = len(cfg.classes)
 
     logging.info(f'Got {np.unique(test_pred).shape[0]} clusters')
 
