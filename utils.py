@@ -51,6 +51,7 @@ def label_assignment(true_labels, cluster_labels):
 
     n_types = np.unique(true_labels).shape[0]
 
+    # noinspection PyArgumentList
     row_ind, col_ind = linear_sum_assignment(costs_matrix, maximize=True)
     mapping = np.zeros(n_types, dtype='int')
     mapping[row_ind] = col_ind

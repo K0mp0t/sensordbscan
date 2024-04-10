@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from cuml.cluster import DBSCAN
 from sklearn.metrics import calinski_harabasz_score
-from sklearn.neighbors import NearestNeighbors
 import torch
 from torch.utils.data import DataLoader
 from fddbenchmark import FDDDataloader, FDDDataset
@@ -222,18 +221,31 @@ def select_samples_to_label(embs, clustering_labels, known_ys, number_samples_to
         # accordingly)
         costs_matrix = build_costs_matrix(known_ys, pred_ys, nclusters=unique_clusters.shape[0])
         costs_matrix[costs_matrix.argmax(axis=0), np.arange(costs_matrix.shape[1])] = 0
+
+        # TODO: alter normalization here (sometimes there could be one 100% probability cluster with less number of
+        # new samples than n_samples_to_select so sampling would return less samples due to break in while loop below
         weights = costs_matrix.sum(axis=0) / costs_matrix.sum()
     else:
         weights = cluster_sizes / cluster_sizes.sum()
 
     samples_indices = list()
-    for _ in trange(number_samples_to_select, desc=f'Epoch #{epoch}. Selecting {number_samples_to_select} samples to label'):
+    pbar = trange(number_samples_to_select, desc=f'Epoch #{epoch}. Selecting {number_samples_to_select} samples to label')
+    while len(samples_indices) < number_samples_to_select:
         cluster = np.random.choice(unique_clusters, p=weights)
 
         cluster_indices = np.where(clustering_labels == cluster)[0]
         cluster_indices = np.setdiff1d(cluster_indices, old_indices)
         cluster_indices = np.setdiff1d(cluster_indices, samples_indices)
         cluster_samples = embs[cluster_indices]
+
+        # otherwise empty clusters will cause an error
+        if len(cluster_samples) == 0:
+            weights[unique_clusters == cluster] = 0
+            if weights.sum() == 0:
+                logging.info(f'Epoch #{epoch}. All clusters are empty')
+                break
+            weights = weights / weights.sum()
+            continue
 
         cluster_mean = np.mean(cluster_samples)
         cluster_std = np.std(cluster_samples)
@@ -243,6 +255,8 @@ def select_samples_to_label(embs, clustering_labels, known_ys, number_samples_to
 
         selected_index = np.random.choice(cluster_indices, p=probs)
         samples_indices.append(selected_index)
+
+        pbar.update(1)
 
     return np.array(samples_indices).astype(int)
 
