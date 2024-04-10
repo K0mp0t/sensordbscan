@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from cuml.cluster import DBSCAN
-# from sklearn.cluster import DBSCAN
 from sklearn.metrics import calinski_harabasz_score
 from sklearn.neighbors import NearestNeighbors
 import torch
@@ -11,6 +10,7 @@ from tqdm import tqdm, trange
 import scipy
 import logging
 from models.sensordbscan.visualization_utils import visualize_all
+from utils import build_costs_matrix
 
 
 def build_pretraining_dataloader(cfg):
@@ -25,25 +25,6 @@ def build_pretraining_dataloader(cfg):
                                                    num_workers=4, pin_memory=True)
 
     return train_dataloader
-
-
-def build_neighbour_loader(cfg, encoder):
-    dataset = _build_fdd_dataset(cfg.pretraining, True)
-
-    train_dataset = TrainingDataset(cfg.pretraining, dataset)
-    train_subsample_idxs = np.random.choice(np.arange(0, len(train_dataset)),
-                                            min(len(train_dataset), cfg.neighbour_dataset_size), replace=False)
-    train_dataset_subset = torch.utils.data.Subset(train_dataset, train_subsample_idxs)
-
-    neighbor_dataset = NeighborDataset.build_with_encoder(cfg, train_dataset_subset, encoder)
-
-    neighbor_loader = torch.utils.data.DataLoader(dataset=neighbor_dataset,
-                                                  batch_size=cfg.scan_batch_size,
-                                                  shuffle=True,
-                                                  num_workers=4,
-                                                  pin_memory=True, drop_last=True)
-
-    return neighbor_loader
 
 
 def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch):
@@ -74,6 +55,7 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
     selected_indices = None
     if (len(ch_scores) < 1 or score * cfg.ch_score_momentum < ch_scores[-1] or outliers_factor > 0.01) and epoch < cfg.epochs:
         selected_indices = select_samples_to_label(embs.cpu().numpy(), clustering_labels,
+                                                   np.array([ys[i] for i in indices]),
                                                    cfg.n_samples_to_select, indices, epoch)
 
     visualize_all(embs.cpu().numpy(), clustering_labels, ys, selected_indices, cfg, epoch)
@@ -83,8 +65,6 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
         indices = torch.IntTensor(indices)
 
     ch_scores.append(score)
-
-    # logging.info(f'Epoch #{epoch}. Building triplets loader')
 
     X_ = torch.stack([slices_dataset[i][0] for i in indices], dim=0)
     y_ = torch.IntTensor([slices_dataset[i][1] for i in indices])
@@ -148,12 +128,6 @@ class SlicesDataset(torch.utils.data.Dataset):
             indices = indices[::step_size]
             indices = indices[mask.iloc[indices].to_numpy(dtype=bool)]
             self.windows_end_indices.extend(indices)
-
-        # for run_id in self.X.index.get_level_values(0).unique():
-        #     indices = np.array(self.X.index.get_loc([run_id]))
-        #     indices = indices[self.window_size - 1:]
-        #     indices = indices[::step_size]
-        #     self.windows_end_indices.extend(indices)
 
         self.windows_end_indices = torch.IntTensor(self.windows_end_indices)
         self.X = torch.FloatTensor(self.X.to_numpy())
@@ -235,16 +209,26 @@ class TripletsDataset(torch.utils.data.Dataset):
         return len(self.triplet_idxs)
 
 
-def select_samples_to_label(embs, clustering_labels, number_samples_to_select, old_indices, epoch):
-    # logging.info(f'Epoch #{epoch}. Selecting {number_samples_to_select} samples to label')
-
+def select_samples_to_label(embs, clustering_labels, known_ys, number_samples_to_select, old_indices, epoch):
     unique_clusters, cluster_sizes = np.unique(clustering_labels, return_counts=True)
-    # cluster_sizes = cluster_sizes[unique_clusters >= 0]
-    # unique_clusters = unique_clusters[unique_clusters >= 0]
+
+    if len(old_indices) > 0:
+        pred_ys = clustering_labels[old_indices]
+        if pred_ys.min() < 0:
+            pred_ys += 1
+
+        # For each cluster find number of labels minus most frequent one
+        # (so we may estimate intra-cluster dispersion of targets for each of clusters and assign sampling weights
+        # accordingly)
+        costs_matrix = build_costs_matrix(known_ys, pred_ys, nclusters=unique_clusters.shape[0])
+        costs_matrix[costs_matrix.argmax(axis=0), np.arange(costs_matrix.shape[1])] = 0
+        weights = costs_matrix.sum(axis=0) / costs_matrix.sum()
+    else:
+        weights = cluster_sizes / cluster_sizes.sum()
 
     samples_indices = list()
     for _ in trange(number_samples_to_select, desc=f'Epoch #{epoch}. Selecting {number_samples_to_select} samples to label'):
-        cluster = np.random.choice(unique_clusters, p=cluster_sizes/sum(cluster_sizes))
+        cluster = np.random.choice(unique_clusters, p=weights)
 
         cluster_indices = np.where(clustering_labels == cluster)[0]
         cluster_indices = np.setdiff1d(cluster_indices, old_indices)
@@ -261,81 +245,6 @@ def select_samples_to_label(embs, clustering_labels, number_samples_to_select, o
         samples_indices.append(selected_index)
 
     return np.array(samples_indices).astype(int)
-
-
-class TrainingDataset(torch.utils.data.Dataset):
-    def __init__(self, cfg, fdd_dataset):
-        self.fdd_dataset = fdd_dataset
-        self.train = True
-        self.fddloader = FDDDataloader(
-            dataframe=self.fdd_dataset.df,
-            label=self.fdd_dataset.label,
-            mask=self.fdd_dataset.train_mask,
-            window_size=cfg.model_input_length,
-            step_size=cfg.step_size,
-            use_minibatches=True,
-            batch_size=1,
-            shuffle=False
-        )
-
-    def __len__(self):
-        return len(self.fddloader)
-
-    def __getitem__(self, idx):
-        window, _, label = self.fddloader[idx]
-
-        window = torch.FloatTensor(window[0])
-        label = torch.LongTensor([label[0].astype('int')])
-
-        return window, label
-
-
-class NeighborDataset(torch.utils.data.Dataset):
-    def __init__(self, dataset, neighbor_indices):
-        super(NeighborDataset, self).__init__()
-
-        self.dataset = dataset
-        self.neighbor_indices = neighbor_indices
-
-    @classmethod
-    def build_with_encoder(cls, cfg, dataset, encoder):
-        encoder = encoder.eval()
-
-        embedings_list = []
-
-        loader = torch.utils.data.DataLoader(dataset=dataset,
-                                             batch_size=cfg.scan_batch_size,
-                                             shuffle=False,
-                                             num_workers=4,
-                                             pin_memory=True, drop_last=False)
-
-        for X, _ in tqdm(loader, total=len(loader)):
-            X = X.to(cfg.device)
-            pad_mask = torch.ones(*X.shape[:-1], dtype=torch.bool, device=cfg.device)
-
-            with torch.no_grad():
-                _, embeddings = encoder(X, pad_mask)
-
-            embedings_list.append(embeddings.cpu())
-
-        embeddings = torch.cat(embedings_list, dim=0).numpy()
-
-        nbrs = NearestNeighbors(n_neighbors=cfg.num_neighbors, algorithm='ball_tree').fit(embeddings)
-        _, idxs = nbrs.kneighbors(embeddings)
-        idxs = idxs[:, 1:]
-
-        return cls(dataset, idxs)
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, idx):
-        X, label = self.dataset[idx]
-
-        neighbor_ind = np.random.choice(self.neighbor_indices[idx])
-        neighbor, _ = self.dataset[neighbor_ind]
-
-        return X, neighbor, label
 
 
 def _build_fdd_dataset(cfg, big_cluster_reduction=False):

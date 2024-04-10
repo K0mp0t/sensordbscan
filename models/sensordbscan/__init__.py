@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import os
-from models.sensordbscan.data_utils import build_pretraining_dataloader, build_neighbour_loader, build_triplets_loader, SlicesDataset
+from models.sensordbscan.data_utils import build_pretraining_dataloader, build_triplets_loader, SlicesDataset
 from models.sensordbscan.model import build_encoder, build_clustering, SensorSCAN, SensorDBSCAN
 from models.sensordbscan.optim import build_pretraining_optim, build_scan_optim, build_triplet_optim
 from models.sensordbscan.train_utils import train_ssl_epoch, train_scan_epoch, train_triplet_epoch

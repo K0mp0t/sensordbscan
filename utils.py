@@ -1,5 +1,6 @@
 from typing import Union, List
 
+from scipy.optimize import linear_sum_assignment
 import numpy as np
 from fddbenchmark import FDDDataset
 
@@ -24,6 +25,45 @@ def weighted_max_occurence(true_labels, cluster_labels, n_types):
         mapping[type_idx] = values[np.argmax(counts)]
 
     return mapping
+
+
+def build_costs_matrix(true_labels, cluster_labels, nclusters=None):
+    assert len(true_labels) == len(cluster_labels)
+
+    if nclusters is None:
+        nclusters = np.unique(cluster_labels).shape[0]
+
+    costs_matrix = np.zeros((np.unique(true_labels).shape[0], nclusters), dtype=int)
+
+    for label in np.unique(true_labels):
+        type_clusters = cluster_labels[true_labels == label]
+        cluster_labels_, counts = np.unique(type_clusters, return_counts=True)
+        # counts = counts[cluster_labels_ >= 0]
+        # cluster_labels_ = cluster_labels_[cluster_labels_ >= 0]
+        costs_matrix[label, cluster_labels_] = counts
+
+    return costs_matrix
+
+
+def label_assignment(true_labels, cluster_labels):
+    _cluster_labels = cluster_labels.values
+    costs_matrix = build_costs_matrix(true_labels, _cluster_labels)
+
+    n_types = np.unique(true_labels).shape[0]
+
+    row_ind, col_ind = linear_sum_assignment(costs_matrix, maximize=True)
+    mapping = np.zeros(n_types, dtype='int')
+    mapping[row_ind] = col_ind
+
+    for type_idx in range(n_types):
+        if type_idx in row_ind:
+            continue
+        type_clusters = _cluster_labels[true_labels == type_idx]
+        values, counts = np.unique(type_clusters, return_counts=True)
+        mapping[type_idx] = values[np.argmax(counts)]
+
+    return mapping
+
 
 def exclude_columns(df):
     excl = [

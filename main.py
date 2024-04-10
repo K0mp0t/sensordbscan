@@ -1,6 +1,6 @@
 import hydra
 from models import pca_kmeans, st_catgan, convae, sensorscan, sensordbscan
-from utils import weighted_max_occurence, print_clustering, print_fdd
+from utils import weighted_max_occurence, print_clustering, print_fdd, label_assignment
 import logging
 from fddbenchmark import FDDEvaluator
 import pandas as pd
@@ -43,7 +43,10 @@ def main(cfg):
     print_clustering(metrics, logging)
 
     logging.info('Creating label matching')
-    label_matching = weighted_max_occurence(test_label, test_pred, n_types)
+    # label_matching = weighted_max_occurence(test_label, test_pred, n_types)
+    if test_pred.min() < 0:
+        test_pred += 1
+    label_matching = label_assignment(test_label, test_pred)
 
     test_pred = pd.Series(label_matching[test_pred], index=test_pred.index)
     logging.info('Calculating FDD metrics')
