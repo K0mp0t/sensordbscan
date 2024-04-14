@@ -89,6 +89,7 @@ def run(cfg):
             triplets_loader, indices, ch_scores = build_triplets_loader(cfg, slices_dataset, encoder, indices,
                                                                         ch_scores, epoch)
             avg_loss = train_triplet_epoch(cfg, encoder, triplets_loader, loss_fn, optimizer)
+            # TODO: log loss before and after
             logging.info(f'Epoch #{epoch}. loss = {avg_loss:10.8f}')
 
         # for epoch in range(cfg.epochs, cfg.epochs+cfg.clustering_finetuning_epochs):

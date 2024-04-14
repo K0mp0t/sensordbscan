@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from cuml import TSNE, UMAP
 import numpy as np
 import matplotlib
+from utils import label_assignment
+
 matplotlib.use('TkAgg')
 
 
@@ -21,6 +23,12 @@ def show_fig_with_timer(fig, interval):
 def visualize_all(embs, clustering_labels, gt_labels, selected_indices, cfg, epoch):
     umap_decomposed = UMAP(n_components=2, metric=cfg.metric).fit_transform(embs)
     tsne_decomposed = TSNE(n_components=2, metric=cfg.metric).fit_transform(embs)
+
+    # TODO: match labels so scatterplot colors are the same
+    # label_matching = label_assignment(gt_labels, clustering_labels)
+    # gt_labels_matched = gt_labels.copy()
+    # for old_value, new_value in enumerate(label_matching):
+    #     gt_labels_matched[gt_labels == old_value] = new_value
 
     visualize_clustering(umap_decomposed, tsne_decomposed, clustering_labels, gt_labels, epoch)
     if selected_indices is not None:

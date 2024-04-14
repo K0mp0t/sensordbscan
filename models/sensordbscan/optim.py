@@ -31,6 +31,7 @@ def build_triplet_optim(cfg, model):
     else:
         raise ValueError(f'got unexpected distance metric: {cfg.metric}')
 
+    # TODO: finish distance function experiments, make some LR experiments
     loss_fn = torch.nn.TripletMarginWithDistanceLoss(margin=cfg.epsilon, distance_function=None)
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.encoder_lr)
 

@@ -57,22 +57,22 @@ pretraining:
 
   device: 'cuda'
 
-epochs: 25
+epochs: 15
 clustering_finetuning_epochs: 3
 
 encoder_dim: 64
 clustering_dim: 128
 num_clusters: 29
-encoder_lr: 4e-5
+encoder_lr: 2e-5
 clustering_lr: 1e-3
 entropy_weight: 1.4
 
 device: 'cuda'
-batch_size: 128
+batch_size: 1024
 metric: 'euclidean'
 epsilon: 1
 min_samples: 100
-max_triplets: 131072
+max_triplets: 102400
 n_samples_to_select: 1000
 ch_score_momentum: 0.9
 

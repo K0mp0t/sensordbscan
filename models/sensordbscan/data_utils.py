@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import pandas as pd
 from cuml.cluster import DBSCAN
@@ -59,6 +61,7 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
 
     visualize_all(embs.cpu().numpy(), clustering_labels, ys, selected_indices, cfg, epoch)
 
+    # TODO: add number of samples logging
     if selected_indices is not None:
         indices = np.concatenate([indices, selected_indices])
         indices = torch.IntTensor(indices)
@@ -114,6 +117,7 @@ class SlicesDataset(torch.utils.data.Dataset):
     def __init__(self, X: pd.DataFrame, y: pd.Series, mask: pd.Series, window_size: int, step_size: int):
         super(SlicesDataset, self).__init__()
 
+        # TODO: add variable window sizes
         self.window_size = window_size
 
         self.X = X
@@ -222,11 +226,16 @@ def select_samples_to_label(embs, clustering_labels, known_ys, number_samples_to
         costs_matrix = build_costs_matrix(known_ys, pred_ys, nclusters=unique_clusters.shape[0])
         costs_matrix[costs_matrix.argmax(axis=0), np.arange(costs_matrix.shape[1])] = 0
 
-        # TODO: alter normalization here (sometimes there could be one 100% probability cluster with less number of
-        # new samples than n_samples_to_select so sampling would return less samples due to break in while loop below
-        weights = costs_matrix.sum(axis=0) / costs_matrix.sum()
+        # TODO: alter normalization here (sometimes there could be zero probability clusters)
+        weights = np.log(costs_matrix.sum(axis=0) + costs_matrix.mean(axis=0))
+        weights = np.maximum(weights, 0)
+        weights = weights / weights.sum()
+        # print(weights)
+        # time.sleep(1)
     else:
         weights = cluster_sizes / cluster_sizes.sum()
+        # print('weights calculated from cluster_sizes')
+        # time.sleep(1)
 
     samples_indices = list()
     pbar = trange(number_samples_to_select, desc=f'Epoch #{epoch}. Selecting {number_samples_to_select} samples to label')

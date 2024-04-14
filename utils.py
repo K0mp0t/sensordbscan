@@ -47,9 +47,9 @@ def build_costs_matrix(true_labels, cluster_labels, nclusters=None):
 
 def label_assignment(true_labels, cluster_labels):
     _cluster_labels = cluster_labels.values
-    costs_matrix = build_costs_matrix(true_labels, _cluster_labels)
+    costs_matrix = build_costs_matrix(_cluster_labels, true_labels)
 
-    n_types = np.unique(true_labels).shape[0]
+    n_types = np.unique(cluster_labels).shape[0]
 
     # noinspection PyArgumentList
     row_ind, col_ind = linear_sum_assignment(costs_matrix, maximize=True)
@@ -59,8 +59,8 @@ def label_assignment(true_labels, cluster_labels):
     for type_idx in range(n_types):
         if type_idx in row_ind:
             continue
-        type_clusters = _cluster_labels[true_labels == type_idx]
-        values, counts = np.unique(type_clusters, return_counts=True)
+        type_labels = true_labels[_cluster_labels == type_idx]
+        values, counts = np.unique(type_labels, return_counts=True)
         mapping[type_idx] = values[np.argmax(counts)]
 
     return mapping
