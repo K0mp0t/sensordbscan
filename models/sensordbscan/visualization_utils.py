@@ -5,7 +5,7 @@ from cuml import TSNE, UMAP
 import numpy as np
 from utils import label_assignment
 
-matplotlib.use('TkAgg')
+matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 
