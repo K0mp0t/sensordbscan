@@ -1,12 +1,13 @@
-import matplotlib.pyplot as plt
+import matplotlib
 # from sklearn.decomposition import PCA, TruncatedSVD
 # from sklearn.manifold import TSNE
 from cuml import TSNE, UMAP
 import numpy as np
-import matplotlib
 from utils import label_assignment
 
 matplotlib.use('TkAgg')
+
+import matplotlib.pyplot as plt
 
 
 def show_fig_with_timer(fig, interval):
