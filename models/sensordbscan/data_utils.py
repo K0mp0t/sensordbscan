@@ -59,7 +59,7 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
                                                    np.array([ys[i] for i in indices]),
                                                    cfg.n_samples_to_select, indices, epoch)
 
-    visualize_all(embs.cpu().numpy(), clustering_labels, ys, selected_indices, cfg, epoch)
+    #visualize_all(embs.cpu().numpy(), clustering_labels, ys, selected_indices, cfg, epoch)
 
     # TODO: add number of samples logging
     if selected_indices is not None:
