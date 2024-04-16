@@ -227,7 +227,7 @@ def select_samples_to_label(embs, clustering_labels, known_ys, number_samples_to
         costs_matrix[costs_matrix.argmax(axis=0), np.arange(costs_matrix.shape[1])] = 0
 
         # TODO: alter normalization here (sometimes there could be zero probability clusters)
-        weights = np.log(costs_matrix.sum(axis=0) + costs_matrix.mean(axis=0))
+        weights = np.log(costs_matrix.sum(axis=0) + costs_matrix.mean())
         weights = np.maximum(weights, 0)
         weights = weights / weights.sum()
         # print(weights)
