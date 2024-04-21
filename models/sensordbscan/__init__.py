@@ -86,8 +86,11 @@ def run(cfg):
         slices_dataset = SlicesDataset(dataset.df, dataset.label, dataset.train_mask, cfg.window_size, cfg.step_size)
         loss_fn, optimizer = build_triplet_optim(cfg, encoder)
         for epoch in range(cfg.epochs):
+            logging.info(f'Epoch #{epoch} cycle started')
             triplets_loader, indices, ch_scores = build_triplets_loader(cfg, slices_dataset, encoder, indices,
                                                                         ch_scores, epoch)
+            logging.info(f'build_triplets_loader finished')
+            logging.info('epoch triplet started')
             avg_loss = train_triplet_epoch(cfg, encoder, triplets_loader, loss_fn, optimizer)
             # TODO: log loss before and after
             logging.info(f'Epoch #{epoch}. loss = {avg_loss:10.8f}')

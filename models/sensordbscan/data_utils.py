@@ -41,14 +41,17 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
             embs.append(pred[1])
             ys.extend(y.cpu().numpy().tolist())
 
-    # logging.info(f'Epoch #{epoch}. Clustering embeddings')
+    logging.info(f'Epoch #{epoch}. Clustering embeddings finished')
     embs = torch.cat(embs, dim=0)
+
+    logging.info('DBSCAN start working')
     clustering_labels = DBSCAN(eps=cfg.epsilon, min_samples=cfg.min_samples).fit_predict(embs.cpu().numpy())
 
+    logging.info('DBSCAN fit_predict_finished')
     outliers_factor = np.sum(clustering_labels == -1) / embs.shape[0]
 
     nclusters = np.unique(clustering_labels).shape[0]
-
+    logging.info('calinski_harabasz_score start working')
     score = calinski_harabasz_score(embs.detach().cpu().numpy(), clustering_labels) if nclusters > 1 else 0
 
     logging.info(f'Epoch #{epoch}. Calinski-Harabasz score: {round(score, 2)}, #clusters: {nclusters}, outliers factor: {round(outliers_factor, 6)}')
@@ -213,6 +216,7 @@ class TripletsDataset(torch.utils.data.Dataset):
 
 
 def select_samples_to_label(embs, clustering_labels, known_ys, number_samples_to_select, old_indices, epoch):
+    logging.info('select_samples_to_label start working')
     unique_clusters, cluster_sizes = np.unique(clustering_labels, return_counts=True)
 
     if len(old_indices) > 0:
@@ -240,6 +244,7 @@ def select_samples_to_label(embs, clustering_labels, known_ys, number_samples_to
     samples_indices = list()
     pbar = trange(number_samples_to_select, desc=f'Epoch #{epoch}. Selecting {number_samples_to_select} samples to label')
     while len(samples_indices) < number_samples_to_select:
+        logging.info(f'samples_indices cycle {len(samples_indices), number_samples_to_select}')
         cluster = np.random.choice(unique_clusters, p=weights)
 
         cluster_indices = np.where(clustering_labels == cluster)[0]
