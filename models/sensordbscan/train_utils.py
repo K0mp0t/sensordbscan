@@ -98,7 +98,7 @@ def train_triplet_epoch(cfg, model, dataloader, loss_fn, optimizer):
 
     optimizer.zero_grad()
     logging.info('init epoch ended')
-    for (anchors, positives, negatives) in tqdm(dataloader, desc='Training'):
+    for (anchors, positives, negatives) in dataloader:
         logging.info('cycle started')
         anchors = anchors.to(cfg.device)
         positives = positives.to(cfg.device)
