@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from tqdm import tqdm
+import logging
 
 
 def train_ssl_epoch(cfg, model, dataloader, loss_fn, optimizer):
@@ -90,26 +91,36 @@ def train_scan_epoch(cfg, epoch, encoder, clustering_model, loader, loss_fn, enc
 
 
 def train_triplet_epoch(cfg, model, dataloader, loss_fn, optimizer):
+    logging.info('init epoch')
     model.train()
 
     train_loss = 0
 
     optimizer.zero_grad()
+    logging.info('init epoch ended')
     for (anchors, positives, negatives) in tqdm(dataloader, desc='Training'):
+        logging.info('cycle started')
         anchors = anchors.to(cfg.device)
         positives = positives.to(cfg.device)
         negatives = negatives.to(cfg.device)
+        logging.info('anp calulated')
 
         pad_masks = torch.ones(*anchors.shape[:-1], dtype=torch.bool, device=cfg.device)
-
+        logging.info('emd calulating start')
         anchor_embs = model(anchors, pad_masks)[1]
         positive_embs = model(positives, pad_masks)[1]
         negative_embs = model(negatives, pad_masks)[1]
+        logging.info('emd calulating end')
 
+        logging.info('loss fn start')
         loss = loss_fn(anchor_embs, positive_embs, negative_embs)
         train_loss += loss.item()
+        logging.info('loss fn finished')
 
+        logging.info('backward start')
         loss.backward()
+        logging.info('backward finished')
         optimizer.step()
+        logging.info('step finished')
 
     return train_loss / len(dataloader)

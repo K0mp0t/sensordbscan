@@ -244,7 +244,6 @@ def select_samples_to_label(embs, clustering_labels, known_ys, number_samples_to
     samples_indices = list()
     pbar = trange(number_samples_to_select, desc=f'Epoch #{epoch}. Selecting {number_samples_to_select} samples to label')
     while len(samples_indices) < number_samples_to_select:
-        logging.info(f'samples_indices cycle {len(samples_indices), number_samples_to_select}')
         cluster = np.random.choice(unique_clusters, p=weights)
 
         cluster_indices = np.where(clustering_labels == cluster)[0]
