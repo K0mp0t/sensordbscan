@@ -29,7 +29,8 @@ def build_pretraining_dataloader(cfg):
 
 
 def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch):
-    dataloader = DataLoader(slices_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    dataloader = DataLoader(slices_dataset, batch_size=cfg.batch_size, 
+                            shuffle=True, num_workers=12, pin_memory=True)
 
     # logging.info(f'Epoch #{epoch}. Calculating embeddings')
     embs = list()
@@ -78,7 +79,7 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
     triplets_loader = torch.utils.data.DataLoader(dataset=triplets_dataset,
                                                   batch_size=cfg.batch_size,
                                                   shuffle=True,
-                                                  num_workers=4, pin_memory=True)
+                                                  num_workers=12, pin_memory=True)
 
     if triplets_dataset.triplet_idxs.shape[0] < 10:
         return build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
@@ -208,6 +209,7 @@ class TripletsDataset(torch.utils.data.Dataset):
         self.triplet_idxs = self.triplet_idxs[torch.argsort(self.triplet_distances).to('cpu')][:cfg.max_triplets]
 
     def __getitem__(self, idx):
+        logging.info('getitem')
         aidx, pidx, nidx = self.triplet_idxs[idx]
         return self.X[aidx], self.X[pidx], self.X[nidx]
 
