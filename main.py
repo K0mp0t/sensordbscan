@@ -19,7 +19,6 @@ def main(cfg):
     elif cfg.model == 'sensorscan':
         train_pred, train_label, test_pred, test_label = sensorscan.run(cfg)
     elif cfg.model == 'sensordbscan':
-        logging.info('Here we go')
         train_pred, train_label, test_pred, test_label = sensordbscan.run(cfg)
     else:
         raise NotImplementedError

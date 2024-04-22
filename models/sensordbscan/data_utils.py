@@ -45,14 +45,11 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
     logging.info(f'Epoch #{epoch}. Clustering embeddings finished')
     embs = torch.cat(embs, dim=0)
 
-    logging.info('DBSCAN start working')
     clustering_labels = DBSCAN(eps=cfg.epsilon, min_samples=cfg.min_samples).fit_predict(embs.cpu().numpy())
 
-    logging.info('DBSCAN fit_predict_finished')
     outliers_factor = np.sum(clustering_labels == -1) / embs.shape[0]
 
     nclusters = np.unique(clustering_labels).shape[0]
-    logging.info('calinski_harabasz_score start working')
     score = calinski_harabasz_score(embs.detach().cpu().numpy(), clustering_labels) if nclusters > 1 else 0
 
     logging.info(f'Epoch #{epoch}. Calinski-Harabasz score: {round(score, 2)}, #clusters: {nclusters}, outliers factor: {round(outliers_factor, 6)}')
@@ -79,7 +76,8 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
     triplets_loader = torch.utils.data.DataLoader(dataset=triplets_dataset,
                                                   batch_size=cfg.batch_size,
                                                   shuffle=True,
-                                                  num_workers=12, pin_memory=True)
+                                                  num_workers=12, 
+                                                  pin_memory=False)
 
     if triplets_dataset.triplet_idxs.shape[0] < 10:
         return build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
@@ -209,7 +207,6 @@ class TripletsDataset(torch.utils.data.Dataset):
         self.triplet_idxs = self.triplet_idxs[torch.argsort(self.triplet_distances).to('cpu')][:cfg.max_triplets]
 
     def __getitem__(self, idx):
-        logging.info('getitem')
         aidx, pidx, nidx = self.triplet_idxs[idx]
         return self.X[aidx], self.X[pidx], self.X[nidx]
 
@@ -218,7 +215,6 @@ class TripletsDataset(torch.utils.data.Dataset):
 
 
 def select_samples_to_label(embs, clustering_labels, known_ys, number_samples_to_select, old_indices, epoch):
-    logging.info('select_samples_to_label start working')
     unique_clusters, cluster_sizes = np.unique(clustering_labels, return_counts=True)
 
     if len(old_indices) > 0:
