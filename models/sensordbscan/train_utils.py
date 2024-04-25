@@ -96,7 +96,9 @@ def train_triplet_epoch(cfg, model, dataloader, loss_fn, optimizer):
     train_loss = 0
 
     optimizer.zero_grad()
+    logging.info('epoch init')
     for (anchors, positives, negatives) in dataloader:
+        logging.info('epoch started')
         anchors = anchors.to(cfg.device)
         positives = positives.to(cfg.device)
         negatives = negatives.to(cfg.device)
@@ -111,5 +113,6 @@ def train_triplet_epoch(cfg, model, dataloader, loss_fn, optimizer):
 
         loss.backward()
         optimizer.step()
+        logging.info('epoch ended')
 
     return train_loss / len(dataloader)
