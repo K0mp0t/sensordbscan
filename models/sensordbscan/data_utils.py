@@ -76,7 +76,7 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
     triplets_loader = torch.utils.data.DataLoader(dataset=triplets_dataset,
                                                   batch_size=cfg.batch_size,
                                                   shuffle=True,
-                                                  num_workers=12, 
+                                                  num_workers=1, 
                                                   pin_memory=False)
 
     if triplets_dataset.triplet_idxs.shape[0] < 10:
