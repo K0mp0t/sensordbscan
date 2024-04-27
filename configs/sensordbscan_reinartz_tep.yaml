@@ -57,7 +57,7 @@ pretraining:
 
   device: 'cuda'
 
-epochs: 15
+epochs: 30
 clustering_finetuning_epochs: 3
 
 encoder_dim: 64
@@ -71,9 +71,12 @@ device: 'cuda'
 batch_size: 1024
 metric: 'euclidean'
 epsilon: 1
+dbscan_epsilon_param: 0.9
+algorithm: 'rbc'
+max_mbytes_per_batch: 16384
 min_samples: 100
 max_triplets: 102400
 n_samples_to_select: 1000
 ch_score_momentum: 0.9
 
-classes: [0, 1, 2, 3, 4, 5]
+classes: 'all'

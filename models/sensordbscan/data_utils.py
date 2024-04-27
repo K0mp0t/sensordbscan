@@ -44,9 +44,12 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
 
     logging.info(f'Epoch #{epoch}. Clustering embeddings finished')
     embs = torch.cat(embs, dim=0)
-
-    clustering_labels = DBSCAN(eps=cfg.epsilon, min_samples=cfg.min_samples).fit_predict(embs.cpu().numpy())
-
+    logging.info('DBSCAN started')
+    clustering_labels = DBSCAN(eps=cfg.epsilon * cfg.dbscan_epsilon_param, 
+                               min_samples=cfg.min_samples, algorithm=cfg.algorithm,
+                               max_mbytes_per_batch=cfg.max_mbytes_per_batch,
+                               ).fit_predict(embs.cpu().numpy())
+    logging.info('DBSCAN finished')
     outliers_factor = np.sum(clustering_labels == -1) / embs.shape[0]
 
     nclusters = np.unique(clustering_labels).shape[0]

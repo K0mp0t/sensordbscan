@@ -114,5 +114,4 @@ def train_triplet_epoch(cfg, model, dataloader, loss_fn, optimizer):
         loss.backward()
         optimizer.step()
         logging.info('batch ended')
-    logging.info('epoch ended')
     return train_loss / len(dataloader)
