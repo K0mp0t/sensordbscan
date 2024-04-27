@@ -72,7 +72,6 @@ batch_size: 1024
 metric: 'euclidean'
 epsilon: 1
 dbscan_epsilon_param: 0.9
-algorithm: 'rbc'
 max_mbytes_per_batch: 16384
 min_samples: 100
 max_triplets: 102400

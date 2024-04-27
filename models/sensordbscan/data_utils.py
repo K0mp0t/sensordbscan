@@ -46,7 +46,7 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
     embs = torch.cat(embs, dim=0)
     logging.info('DBSCAN started')
     clustering_labels = DBSCAN(eps=cfg.epsilon * cfg.dbscan_epsilon_param, 
-                               min_samples=cfg.min_samples, algorithm=cfg.algorithm,
+                               min_samples=cfg.min_samples, 
                                max_mbytes_per_batch=cfg.max_mbytes_per_batch,
                                ).fit_predict(embs.cpu().numpy())
     logging.info('DBSCAN finished')
