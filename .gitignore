@@ -18,3 +18,6 @@ EDA/**
 visualization/
 visualization/**
 visualization.gif
+cuda_memory_logger.py
+cuda_memory.txt
+embeds.npy

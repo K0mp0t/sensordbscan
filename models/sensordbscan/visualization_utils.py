@@ -4,9 +4,8 @@ import matplotlib.pyplot as plt
 from cuml import TSNE, UMAP
 import numpy as np
 import matplotlib
-from utils import label_assignment
 
-matplotlib.use('TkAgg')
+matplotlib.use('Agg')
 
 
 def show_fig_with_timer(fig, interval):

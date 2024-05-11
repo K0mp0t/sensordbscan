@@ -1,5 +1,5 @@
 import time
-
+import gc
 import numpy as np
 import pandas as pd
 from cuml.cluster import DBSCAN
@@ -31,19 +31,23 @@ def build_pretraining_dataloader(cfg):
 def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch):
     dataloader = DataLoader(slices_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
-    # logging.info(f'Epoch #{epoch}. Calculating embeddings')
     embs = list()
     ys = list()
     for X, y in tqdm(dataloader, desc=f'Epoch #{epoch}. Calculating embeddings'):
+        pad_mask = torch.ones(*X.shape[:-1], dtype=torch.bool, device=cfg.device)
         with torch.no_grad():
-            pad_mask = torch.ones(*X.shape[:-1], dtype=torch.bool, device=cfg.device)
             pred = model(X.to(cfg.device), pad_mask)
-            embs.append(pred[1])
-            ys.extend(y.cpu().numpy().tolist())
+        embs.append(pred[1])
+        ys.extend(y.cpu().numpy().tolist())
 
-    # logging.info(f'Epoch #{epoch}. Clustering embeddings')
     embs = torch.cat(embs, dim=0)
-    clustering_labels = DBSCAN(eps=cfg.epsilon, min_samples=cfg.min_samples).fit_predict(embs.cpu().numpy())
+    with open('embeds.npy', 'wb') as f:
+        np.save(f, embs.cpu().numpy())
+
+    gc.collect()
+    torch.cuda.empty_cache()
+    clustering_labels = DBSCAN(eps=cfg.epsilon, min_samples=cfg.min_samples, metric=cfg.metric,
+                               max_mbytes_per_batch=cfg.max_mbytes_per_batch).fit_predict(embs.cpu().numpy())
 
     outliers_factor = np.sum(clustering_labels == -1) / embs.shape[0]
 
@@ -226,16 +230,11 @@ def select_samples_to_label(embs, clustering_labels, known_ys, number_samples_to
         costs_matrix = build_costs_matrix(known_ys, pred_ys, nclusters=unique_clusters.shape[0])
         costs_matrix[costs_matrix.argmax(axis=0), np.arange(costs_matrix.shape[1])] = 0
 
-        # TODO: alter normalization here (sometimes there could be zero probability clusters)
-        weights = np.log(costs_matrix.sum(axis=0) + costs_matrix.mean(axis=0))
+        weights = np.log(costs_matrix.sum(axis=0) + costs_matrix.mean())
         weights = np.maximum(weights, 0)
         weights = weights / weights.sum()
-        # print(weights)
-        # time.sleep(1)
     else:
         weights = cluster_sizes / cluster_sizes.sum()
-        # print('weights calculated from cluster_sizes')
-        # time.sleep(1)
 
     samples_indices = list()
     pbar = trange(number_samples_to_select, desc=f'Epoch #{epoch}. Selecting {number_samples_to_select} samples to label')

@@ -203,4 +203,5 @@ class SensorDBSCAN(object):
     def cluster_embs(self, embs):
         # TODO: maybe add outliers cluster points re-assignment to closest cluster
         return self.clustering_algorithm(eps=self.cfg.epsilon, min_samples=self.cfg.min_samples,
-                                         metric=self.cfg.metric).fit_predict(embs)
+                                         metric=self.cfg.metric,
+                                         max_mbytes_per_batch=self.cfg.max_mbytes_per_batch).fit_predict(embs)
