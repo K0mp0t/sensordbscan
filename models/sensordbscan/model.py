@@ -9,6 +9,8 @@ from torch.nn.modules import (BatchNorm1d, Dropout, Linear, MultiheadAttention,
                               TransformerEncoderLayer)
 # from sklearn.cluster import DBSCAN
 from cuml.cluster import DBSCAN
+from cuml.neighbors import KNeighborsClassifier
+
 
 def build_encoder(cfg):
 
@@ -202,6 +204,17 @@ class SensorDBSCAN(object):
 
     def cluster_embs(self, embs):
         # TODO: maybe add outliers cluster points re-assignment to closest cluster
-        return self.clustering_algorithm(eps=self.cfg.epsilon, min_samples=self.cfg.min_samples,
-                                         metric=self.cfg.metric,
-                                         max_mbytes_per_batch=self.cfg.max_mbytes_per_batch).fit_predict(embs)
+        cluster_labels = self.clustering_algorithm(eps=self.cfg.epsilon*self.cfg.dbscan_epsilon_multiplier,
+                                                   min_samples=self.cfg.min_samples,
+                                                   max_mbytes_per_batch=self.cfg.max_mbytes_per_batch,
+                                                   metric=self.cfg.metric).fit_predict(embs)
+
+        if self.cfg.handle_outliers:
+            knn = KNeighborsClassifier(n_neighbors=self.cfg.knn_neighbors, metric=self.cfg.metric)
+            knn.fit(embs[cluster_labels != -1], cluster_labels[cluster_labels != -1])
+
+            cluster_labels[cluster_labels == -1] = knn.predict(embs[cluster_labels == -1])
+
+        return cluster_labels
+
+

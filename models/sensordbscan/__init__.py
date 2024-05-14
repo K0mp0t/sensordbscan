@@ -124,7 +124,7 @@ def run(cfg):
     train_embs = torch.cat(train_embs, dim=0)
     train_label = pd.concat(train_label).astype('int')
 
-    train_pred = sensordbscan.cluster_embs(train_embs).get()
+    train_pred = sensordbscan.cluster_embs(train_embs.cpu().numpy())
     train_pred = pd.Series(train_pred, index=train_label.index)
 
     logging.info('Getting predictions on test')
@@ -140,7 +140,7 @@ def run(cfg):
     test_embs = torch.cat(test_embs, dim=0)
     test_label = pd.concat(test_label).astype('int')
 
-    test_pred = sensordbscan.cluster_embs(test_embs).get()
+    test_pred = sensordbscan.cluster_embs(test_embs.cpu().numpy())
     test_pred = pd.Series(test_pred, index=test_label.index)
 
     return train_pred, train_label, test_pred, test_label
