@@ -35,7 +35,7 @@ def main(cfg):
     else:
         n_types = len(cfg.classes)
 
-    logging.info(f'Got {np.unique(test_pred).shape[0]} clusters')
+    logging.info(f'Got {np.unique(train_pred).shape[0]} clusters on train set, got {np.unique(test_pred).shape[0]} clusters on test set')
 
     logging.info('Calculating clustering metrics')
     evaluator = FDDEvaluator(step_size=cfg.step_size)

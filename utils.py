@@ -33,7 +33,7 @@ def build_costs_matrix(true_labels, cluster_labels, nclusters=None):
     if nclusters is None:
         nclusters = np.unique(cluster_labels).shape[0]
 
-    costs_matrix = np.zeros((np.unique(true_labels).shape[0], nclusters), dtype=int)
+    costs_matrix = np.zeros((max(true_labels)+1, nclusters), dtype=int)
 
     for label in np.unique(true_labels):
         type_clusters = cluster_labels[true_labels == label]
@@ -60,8 +60,11 @@ def label_assignment(true_labels, cluster_labels):
         if type_idx in row_ind:
             continue
         type_labels = true_labels[_cluster_labels == type_idx]
-        values, counts = np.unique(type_labels, return_counts=True)
-        mapping[type_idx] = values[np.argmax(counts)]
+        unique_items, unique_counts = np.unique(type_labels, return_counts=True)
+        mapping[type_idx] = unique_items[np.argmax(unique_counts)]
+
+    if 0 not in mapping:
+        mapping[costs_matrix[:, 0].argmax()] = 0
 
     return mapping
 

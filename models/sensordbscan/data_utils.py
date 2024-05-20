@@ -1,5 +1,7 @@
 import time
 import gc
+from typing import List
+
 import numpy as np
 import pandas as pd
 from cuml.cluster import DBSCAN
@@ -12,6 +14,7 @@ import scipy
 import logging
 from models.sensordbscan.visualization_utils import visualize_all
 from utils import build_costs_matrix
+import torch.nn.functional as F
 
 
 def build_pretraining_dataloader(cfg):
@@ -28,27 +31,61 @@ def build_pretraining_dataloader(cfg):
     return train_dataloader
 
 
+def add_smaller_windows(X, y, embs, pad_masks, cfg, model):
+    expanded_X = X.clone().to(cfg.device)
+    expanded_y = y.clone().to(cfg.device)
+    expanded_embs = embs.clone()
+
+    for window_size in sorted(cfg.window_sizes)[:-1]:
+        ws_multiplier = (max(cfg.window_sizes) - window_size) // cfg.step_size + 1
+
+        w_pad_masks = torch.ones((X.shape[0] * ws_multiplier, X.shape[1]), dtype=torch.bool, device=cfg.device)
+        w_pad_masks[:, window_size:] = 0
+        w_X = torch.zeros((X.shape[0] * ws_multiplier, X.shape[1], X.shape[2]), dtype=torch.float32, device=cfg.device)
+        w_y = y.repeat(ws_multiplier).to(cfg.device)
+        w_embs = torch.empty((X.shape[0] * ws_multiplier, embs.shape[1]), dtype=torch.float32, device=cfg.device)
+
+        for i in range(ws_multiplier):
+            shift_value = i * cfg.step_size
+            w_X[i * X.shape[0]: (i + 1) * X.shape[0], :window_size] = X[:, shift_value: shift_value + window_size]
+
+        for i, (batch_X, batch_masks) in enumerate(zip(w_X.split(cfg.batch_size), w_pad_masks.split(cfg.batch_size))):
+            with torch.no_grad():
+                pred = model(batch_X, batch_masks)[1]
+
+            w_embs[i * cfg.batch_size: (i + 1) * cfg.batch_size] = pred
+
+        expanded_X = torch.cat([expanded_X, w_X], dim=0)
+        expanded_y = torch.cat([expanded_y, w_y], dim=0)
+        expanded_embs = torch.cat([expanded_embs, w_embs], dim=0)
+        pad_masks = torch.cat([pad_masks, w_pad_masks], dim=0)
+
+        assert expanded_embs.shape[0] == expanded_y.shape[0] == expanded_X.shape[0] == pad_masks.shape[0]
+
+    return expanded_X, expanded_y, expanded_embs, pad_masks
+
+
 def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch):
     dataloader = DataLoader(slices_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
     embs = list()
     ys = list()
+    pad_mask = torch.ones((dataloader.batch_size, max(cfg.window_sizes)), dtype=torch.bool, device=cfg.device)
     for X, y in tqdm(dataloader, desc=f'Epoch #{epoch}. Calculating embeddings'):
-        pad_mask = torch.ones(*X.shape[:-1], dtype=torch.bool, device=cfg.device)
         with torch.no_grad():
-            pred = model(X.to(cfg.device), pad_mask)
+            pred = model(X.to(cfg.device), pad_mask[:X.shape[0]])
+
         embs.append(pred[1])
         ys.extend(y.cpu().numpy().tolist())
 
     embs = torch.cat(embs, dim=0)
-    with open('embeds.npy', 'wb') as f:
-        np.save(f, embs.cpu().numpy())
+    # with open('embeds.npy', 'wb') as f:
+    #     np.save(f, embs.cpu().numpy())
 
     gc.collect()
     torch.cuda.empty_cache()
     clustering_labels = DBSCAN(eps=cfg.epsilon*cfg.dbscan_epsilon_multiplier, min_samples=cfg.min_samples,
-                               metric=cfg.metric,
-                               max_mbytes_per_batch=cfg.max_mbytes_per_batch).fit_predict(embs.cpu().numpy())
+                               metric=cfg.metric, max_mbytes_per_batch=cfg.max_mbytes_per_batch).fit_predict(embs.cpu().numpy())
 
     outliers_factor = np.sum(clustering_labels == -1) / embs.shape[0]
 
@@ -64,7 +101,8 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
                                                    np.array([ys[i] for i in indices]),
                                                    cfg.n_samples_to_select, indices, epoch)
 
-    visualize_all(embs.cpu().numpy(), clustering_labels, ys, selected_indices, cfg, epoch)
+    if cfg.visualize:
+        visualize_all(embs.cpu().numpy(), clustering_labels, ys, selected_indices, cfg, epoch)
 
     # TODO: add number of samples logging
     if selected_indices is not None:
@@ -73,10 +111,16 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
 
     ch_scores.append(score)
 
-    X_ = torch.stack([slices_dataset[i][0] for i in indices], dim=0)
-    y_ = torch.IntTensor([slices_dataset[i][1] for i in indices])
+    xy_pairs = [slices_dataset[i] for i in indices]
+    X_ = torch.stack([xy_pairs[i][0] for i in range(len(indices))], dim=0)
+    y_ = torch.IntTensor([xy_pairs[i][1] for i in range(len(indices))])
+    embs_ = embs[indices]
+    pad_masks = torch.ones(*X_.shape[:-1], dtype=torch.bool, device=cfg.device)
 
-    triplets_dataset = TripletsDataset(X_, y_, embs[indices], cfg)
+    if len(cfg.window_sizes) > 1:
+        X_, y_, embs_, pad_masks = add_smaller_windows(X_, y_, embs_, pad_masks, cfg, model)
+
+    triplets_dataset = TripletsDataset(X_.cpu(), y_.cpu(), embs_, pad_masks.cpu(), cfg)
     triplets_loader = torch.utils.data.DataLoader(dataset=triplets_dataset,
                                                   batch_size=cfg.batch_size,
                                                   shuffle=True,
@@ -122,7 +166,6 @@ class SlicesDataset(torch.utils.data.Dataset):
     def __init__(self, X: pd.DataFrame, y: pd.Series, mask: pd.Series, window_size: int, step_size: int):
         super(SlicesDataset, self).__init__()
 
-        # TODO: add variable window sizes
         self.window_size = window_size
 
         self.X = X
@@ -153,21 +196,22 @@ class SlicesDataset(torch.utils.data.Dataset):
 
 
 class TripletsDataset(torch.utils.data.Dataset):
-    def __init__(self, X, y, embs, cfg, metric='euclidean'):
+    def __init__(self, X, y, embs, pad_masks, cfg, metric='euclidean'):
         super().__init__()
 
         self.X = X
         self.y = y
+        self.pad_masks = pad_masks
 
         self.triplet_idxs = torch.IntTensor()
         self.triplet_distances = torch.tensor([], dtype=torch.float32, device=cfg.device)
         self.cfg = cfg
 
-        distance_matrix = torch.zeros((X.shape[0], X.shape[0]), device=cfg.device)
+        distance_matrix = torch.zeros((self.X.shape[0], self.X.shape[0]), device=cfg.device)
 
         # 1. calculate pairwise distance
-        for i in range(X.shape[0]):
-            for j in range(i, X.shape[1]):  # save a little computation time
+        for i in range(self.X.shape[0]):
+            for j in range(i, self.X.shape[1]):  # save a little computation time
                 if metric == 'euclidean':
                     distance_matrix[i, j] = torch.dist(embs[i], embs[j])
                 elif metric == 'cosine':
@@ -175,6 +219,7 @@ class TripletsDataset(torch.utils.data.Dataset):
                 else:
                     raise ValueError(f'got unexpected distance metric: {metric}')
 
+        # TODO: add logging in the following part
         # 2. construct, filter and sort triplet indices
         for l in torch.unique(self.y):
             positive_idxs = (self.y == l).nonzero()[:, 0]
@@ -196,10 +241,6 @@ class TripletsDataset(torch.utils.data.Dataset):
                 pn_indices = torch.stack([positive_idxs[aidx+1:][pn_indices[:, 0]],
                                           negative_idxs[pn_indices[:, 1]]], dim=1)
 
-                # recalculate for validation
-                # triplet_distances_ = distance_matrix[aidx, pn_indices[:, 1]] - distance_matrix[aidx, pn_indices[:, 0]]
-                # assert all(triplet_distances_ > 0)
-
                 triplet_idxs = torch.cat([torch.full((triplet_distances_.nonzero().shape[0], 1), aidx),
                                           pn_indices], dim=1)
 
@@ -211,7 +252,8 @@ class TripletsDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         aidx, pidx, nidx = self.triplet_idxs[idx]
-        return self.X[aidx], self.X[pidx], self.X[nidx]
+        return (self.X[aidx], self.X[pidx], self.X[nidx],
+                self.pad_masks[aidx], self.pad_masks[pidx], self.pad_masks[nidx])
 
     def __len__(self):
         return len(self.triplet_idxs)

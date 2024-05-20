@@ -96,19 +96,21 @@ class NTXentLoss(torch.nn.Module):
 
         similarity_matrix = self.similarity_function(representations, representations)
 
-        l_pos = torch.diag(similarity_matrix, self.batch_size)
-        r_pos = torch.diag(similarity_matrix, -self.batch_size)
-        positives = torch.cat([l_pos, r_pos]).view(2 * self.batch_size, 1)
+        batch_size = zis.shape[0]
 
-        negatives = similarity_matrix[self.mask_samples_from_same_repr].view(2 * self.batch_size, -1)
+        l_pos = torch.diag(similarity_matrix, batch_size)
+        r_pos = torch.diag(similarity_matrix, -batch_size)
+        positives = torch.cat([l_pos, r_pos]).view(2 * batch_size, 1)
+
+        negatives = similarity_matrix[self.mask_samples_from_same_repr[:2*batch_size, :2*batch_size]].view(2 * batch_size, -1)
 
         logits = torch.cat((positives, negatives), dim=1)
         logits /= self.temperature
 
-        labels = torch.zeros(2 * self.batch_size).to(self.device).long()
+        labels = torch.zeros(2 * batch_size).to(self.device).long()
         loss = self.criterion(logits, labels)
 
-        return loss / (2 * self.batch_size)
+        return loss / (2 * batch_size)
     
 class SCANLoss(torch.nn.Module):
     def __init__(self, entropy_weight):

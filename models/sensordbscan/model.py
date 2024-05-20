@@ -203,11 +203,9 @@ class SensorDBSCAN(object):
         return embs
 
     def cluster_embs(self, embs):
-        # TODO: maybe add outliers cluster points re-assignment to closest cluster
         cluster_labels = self.clustering_algorithm(eps=self.cfg.epsilon*self.cfg.dbscan_epsilon_multiplier,
-                                                   min_samples=self.cfg.min_samples,
-                                                   max_mbytes_per_batch=self.cfg.max_mbytes_per_batch,
-                                                   metric=self.cfg.metric).fit_predict(embs)
+                                                   min_samples=self.cfg.min_samples, metric=self.cfg.metric,
+                                                   max_mbytes_per_batch=self.cfg.max_mbytes_per_batch).fit_predict(embs)
 
         if self.cfg.handle_outliers:
             knn = KNeighborsClassifier(n_neighbors=self.cfg.knn_neighbors, metric=self.cfg.metric)
@@ -216,5 +214,4 @@ class SensorDBSCAN(object):
             cluster_labels[cluster_labels == -1] = knn.predict(embs[cluster_labels == -1])
 
         return cluster_labels
-
 

@@ -94,17 +94,20 @@ def train_triplet_epoch(cfg, model, dataloader, loss_fn, optimizer):
 
     train_loss = 0
 
-    optimizer.zero_grad()
-    for (anchors, positives, negatives) in tqdm(dataloader, desc='Training'):
+    for (anchors, positives, negatives, a_masks, p_masks, n_masks) in tqdm(dataloader, desc='Training'):
+        optimizer.zero_grad()
+
         anchors = anchors.to(cfg.device)
         positives = positives.to(cfg.device)
         negatives = negatives.to(cfg.device)
 
-        pad_masks = torch.ones(*anchors.shape[:-1], dtype=torch.bool, device=cfg.device)
+        a_masks = a_masks.to(cfg.device)
+        p_masks = p_masks.to(cfg.device)
+        n_masks = n_masks.to(cfg.device)
 
-        anchor_embs = model(anchors, pad_masks)[1]
-        positive_embs = model(positives, pad_masks)[1]
-        negative_embs = model(negatives, pad_masks)[1]
+        anchor_embs = model(anchors, a_masks)[1]
+        positive_embs = model(positives, p_masks)[1]
+        negative_embs = model(negatives, n_masks)[1]
 
         loss = loss_fn(anchor_embs, positive_embs, negative_embs)
         train_loss += loss.item()

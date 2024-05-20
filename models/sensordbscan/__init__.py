@@ -1,6 +1,9 @@
 import torch
 import numpy as np
 import os
+
+from torch.utils.data import DataLoader
+
 from models.sensordbscan.data_utils import build_pretraining_dataloader, build_triplets_loader, SlicesDataset
 from models.sensordbscan.model import build_encoder, build_clustering, SensorSCAN, SensorDBSCAN
 from models.sensordbscan.optim import build_pretraining_optim, build_scan_optim, build_triplet_optim
@@ -11,12 +14,15 @@ from fddbenchmark import FDDDataset, FDDDataloader
 import logging
 from utils import exclude_columns, make_rieth_imbalance, normalize, exclude_classes
 import gc
+import cuml
+
+cuml.set_global_output_type('numpy')
 
 
 def run(cfg):
     
     dataset_name = cfg.dataset
-    window_size = cfg.window_size
+    window_size = max(cfg.window_sizes)
     step_size = cfg.step_size
     random_seed = cfg.random_seed
     eval_batch_size = cfg.eval_batch_size
@@ -67,9 +73,9 @@ def run(cfg):
 
     if cfg.path_to_model is None:
         encoder = build_encoder(cfg.pretraining)
-        if os.path.exists('./saved_models/pretrained_encoder.pt'):
+        if os.path.exists(cfg.path_to_encoder):
             logging.info('Using pretrained encoder')
-            encoder.load_state_dict(torch.load('./saved_models/pretrained_encoder.pt'))
+            encoder.load_state_dict(torch.load(cfg.path_to_encoder))
         else:
             logging.info('Pretraining encoder')
             pretraining_loader = build_pretraining_dataloader(cfg.pretraining)
@@ -78,12 +84,15 @@ def run(cfg):
                 avg_loss = train_ssl_epoch(cfg.pretraining, encoder, pretraining_loader, loss_fn, optimizer)
                 logging.info(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
 
-            torch.save(encoder.state_dict(), './saved_models/pretrained_encoder.pt')
+            if cfg.path_to_encoder != '':
+                torch.save(encoder.state_dict(), cfg.path_to_encoder)
+            else:
+                torch.save(encoder.state_dict(), f'pretrained_encoder_{cfg.dataset}.pth')
 
         logging.info('Training encoder with triplet loss')
         indices = list()
         ch_scores = list()
-        slices_dataset = SlicesDataset(dataset.df, dataset.label, dataset.train_mask, cfg.window_size, cfg.step_size)
+        slices_dataset = SlicesDataset(dataset.df, dataset.label, dataset.train_mask, max(cfg.window_sizes), cfg.step_size)
         loss_fn, optimizer = build_triplet_optim(cfg, encoder)
         for epoch in range(cfg.epochs):
             triplets_loader, indices, ch_scores = build_triplets_loader(cfg, slices_dataset, encoder, indices,
@@ -142,5 +151,10 @@ def run(cfg):
 
     test_pred = sensordbscan.cluster_embs(test_embs.cpu().numpy())
     test_pred = pd.Series(test_pred, index=test_label.index)
+
+    if cfg.visualize_final_state:
+        from models.sensordbscan.visualization_utils import visualize_all
+        visualize_all(train_embs.cpu().numpy(), train_pred, train_label, None, cfg, 'final_train')
+        visualize_all(test_embs.cpu().numpy(), test_pred, test_label, None, cfg, 'final_test')
 
     return train_pred, train_label, test_pred, test_label
