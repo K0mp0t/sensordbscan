@@ -10,7 +10,6 @@ from fddbenchmark import FDDDataloader, FDDDataset
 from tqdm import tqdm, trange
 import scipy
 import logging
-from models.sensordbscan.visualization_utils import visualize_all
 from utils import build_costs_matrix
 
 
