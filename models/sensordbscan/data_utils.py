@@ -211,7 +211,7 @@ class TripletsDataset(torch.utils.data.Dataset):
 
         # 1. calculate pairwise distance
         for i in range(self.X.shape[0]):
-            for j in range(i, self.X.shape[1]):  # save a little computation time
+            for j in range(i, self.X.shape[0]):  # save a little computation time
                 if metric == 'euclidean':
                     distance_matrix[i, j] = torch.dist(embs[i], embs[j])
                 elif metric == 'cosine':
