@@ -9,7 +9,7 @@ model: "sensordbscan"
 dataset: "reinartz_tep"
 
 # Size of a sliding window to generate a sequence of samples.
-window_sizes: [100]
+window_sizes: [75, 100]
 
 # Size of a step for sliding window to generate a sequence of samples.
 step_size: 5
@@ -71,8 +71,8 @@ metric: 'euclidean'
 epsilon: 1
 min_samples: 1000
 max_triplets: 153600
-n_samples_to_select: 1000
-ch_score_momentum: 0.9
+n_samples_to_select: 50
+ch_score_momentum: 0.95
 max_mbytes_per_batch: 6144
 dbscan_epsilon_multiplier: 0.95
 

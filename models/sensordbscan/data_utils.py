@@ -203,21 +203,18 @@ class TripletsDataset(torch.utils.data.Dataset):
         self.y = y
         self.pad_masks = pad_masks
 
-        self.triplet_idxs = torch.IntTensor()
+        self.triplet_idxs = torch.tensor([], dtype=torch.int32, device=cfg.device)
         self.triplet_distances = torch.tensor([], dtype=torch.float32, device=cfg.device)
         self.cfg = cfg
 
-        distance_matrix = torch.zeros((self.X.shape[0], self.X.shape[0]), device=cfg.device)
+        if metric == 'euclidean':
+            distance_matrix = torch.norm(embs.unsqueeze(0) - embs.unsqueeze(1), dim=-1)
+        elif metric == 'cosine':
+            distance_matrix = torch.nn.functional.cosine_similarity(embs.unsqueeze(0), embs.unsqueeze(1), dim=-1)
+        else:
+            raise ValueError(f'got unexpected distance metric: {metric}')
 
-        # 1. calculate pairwise distance
-        for i in range(self.X.shape[0]):
-            for j in range(i, self.X.shape[0]):  # save a little computation time
-                if metric == 'euclidean':
-                    distance_matrix[i, j] = torch.dist(embs[i], embs[j])
-                elif metric == 'cosine':
-                    distance_matrix[i, j] = torch.nn.functional.cosine_similarity(embs[i], embs[j], dim=0)
-                else:
-                    raise ValueError(f'got unexpected distance metric: {metric}')
+        distance_matrix = distance_matrix.triu().to(cfg.device)
 
         # TODO: add logging in the following part
         # 2. construct, filter and sort triplet indices
@@ -225,30 +222,33 @@ class TripletsDataset(torch.utils.data.Dataset):
             positive_idxs = (self.y == l).nonzero()[:, 0]
             negative_idxs = (self.y != l).nonzero()[:, 0]
 
-            positive_idxs = positive_idxs.to('cpu')
-            negative_idxs = negative_idxs.to('cpu')
+            positive_idxs = positive_idxs.to(cfg.device)
+            negative_idxs = negative_idxs.to(cfg.device)
 
-            for aidx in positive_idxs:
+            for i, aidx in enumerate(positive_idxs):
                 # (P,) -> (P, N)
-                ap_distances = distance_matrix[aidx, positive_idxs[aidx+1:]].unsqueeze(1).tile((1, len(negative_idxs)))
+                ap_distances = distance_matrix[aidx, positive_idxs[i+1:]].unsqueeze(1).tile((1, len(negative_idxs)))
                 # (N,) -> (1, N)
                 an_distances = distance_matrix[aidx, negative_idxs].unsqueeze(0)
                 # (P, N)
                 triplet_distances_ = an_distances - ap_distances
                 triplet_distances_[triplet_distances_ < 0] = 0
 
-                pn_indices = triplet_distances_.nonzero().to('cpu')
-                pn_indices = torch.stack([positive_idxs[aidx+1:][pn_indices[:, 0]],
+                pn_indices = triplet_distances_.nonzero().to(cfg.device)
+                pn_indices = torch.stack([positive_idxs[i+1:][pn_indices[:, 0]],
                                           negative_idxs[pn_indices[:, 1]]], dim=1)
 
-                triplet_idxs = torch.cat([torch.full((triplet_distances_.nonzero().shape[0], 1), aidx),
+                triplet_idxs = torch.cat([torch.full((triplet_distances_.nonzero().shape[0], 1), aidx, device=cfg.device),
                                           pn_indices], dim=1)
 
                 self.triplet_idxs = torch.cat([self.triplet_idxs, triplet_idxs])
                 self.triplet_distances = torch.cat([self.triplet_distances, triplet_distances_[triplet_distances_ > 0]])
 
-        # 3. take N best (N smallest abs values)
-        self.triplet_idxs = self.triplet_idxs[torch.argsort(self.triplet_distances).to('cpu')][:cfg.max_triplets]
+                # 3. take N best (N smallest abs values)
+                self.triplet_idxs = self.triplet_idxs[torch.argsort(self.triplet_distances).to(cfg.device)][:cfg.max_triplets]
+                self.triplet_distances = self.triplet_distances[torch.argsort(self.triplet_distances)][:cfg.max_triplets]
+
+        self.triplet_idxs = self.triplet_idxs.cpu()
 
     def __getitem__(self, idx):
         aidx, pidx, nidx = self.triplet_idxs[idx]
