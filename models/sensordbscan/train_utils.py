@@ -92,7 +92,7 @@ def train_scan_epoch(cfg, epoch, encoder, clustering_model, loader, loss_fn, enc
 def train_triplet_epoch(cfg, model, dataloader, loss_fn, optimizer):
     model.train()
 
-    train_loss = 0
+    triplet_loss = 0
 
     for (anchors, positives, negatives, a_masks, p_masks, n_masks) in tqdm(dataloader, desc='Training'):
         optimizer.zero_grad()
@@ -109,10 +109,11 @@ def train_triplet_epoch(cfg, model, dataloader, loss_fn, optimizer):
         positive_embs = model(positives, p_masks)[1]
         negative_embs = model(negatives, n_masks)[1]
 
-        loss = loss_fn(anchor_embs, positive_embs, negative_embs)
-        train_loss += loss.item()
+        triplet_loss_, intra_loss_ = loss_fn(anchor_embs, positive_embs, negative_embs)
+        triplet_loss += triplet_loss_.item()
+        loss = triplet_loss_ + intra_loss_
 
         loss.backward()
         optimizer.step()
 
-    return train_loss / len(dataloader)
+    return triplet_loss / len(dataloader)

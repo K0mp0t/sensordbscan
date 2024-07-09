@@ -80,5 +80,7 @@ handle_outliers: False
 visualize: False
 visualize_final_state: True
 
+alpha: 0.1
+
 classes: 'all'
 #classes: [0, 1, 2, 3, 4, 5]

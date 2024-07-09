@@ -25,14 +25,18 @@ def build_scan_optim(cfg, encoder, clustering_model):
 
 def build_triplet_optim(cfg, model):
     if cfg.metric == 'euclidean':
-        distance_fn = torch.dist
+        distance_fn = torch.nn.PairwiseDistance()
     elif cfg.metric == 'cosine':
-        distance_fn = torch.nn.functional.cosine_similarity
+        distance_fn = torch.nn.CosineSimilarity(dim=-1)
     else:
         raise ValueError(f'got unexpected distance metric: {cfg.metric}')
+    def triplet_loss_enhanced(a, p, n):
+        return (torch.nn.functional.triplet_margin_with_distance_loss(a, p, n, margin=cfg.epsilon, distance_function=distance_fn),
+                distance_fn(a.unsqueeze(0), p.unsqueeze(1)).mean())
 
     # TODO: finish distance function experiments, make some LR experiments
-    loss_fn = torch.nn.TripletMarginWithDistanceLoss(margin=cfg.epsilon, distance_function=None)
+    # loss_fn = torch.nn.TripletMarginWithDistanceLoss(margin=cfg.epsilon, distance_function=None)
+    loss_fn = triplet_loss_enhanced
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.encoder_lr)
 
     return loss_fn, optimizer

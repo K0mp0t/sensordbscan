@@ -94,9 +94,10 @@ def run(cfg):
         ch_scores = list()
         slices_dataset = SlicesDataset(dataset.df, dataset.label, dataset.train_mask, max(cfg.window_sizes), cfg.step_size)
         loss_fn, optimizer = build_triplet_optim(cfg, encoder)
+        avg_loss = 0
         for epoch in range(cfg.epochs):
             triplets_loader, indices, ch_scores = build_triplets_loader(cfg, slices_dataset, encoder, indices,
-                                                                        ch_scores, epoch)
+                                                                        ch_scores, epoch, avg_loss)
             avg_loss = train_triplet_epoch(cfg, encoder, triplets_loader, loss_fn, optimizer)
             # TODO: log loss before and after
             logging.info(f'Epoch #{epoch}. loss = {avg_loss:10.8f}')
@@ -116,7 +117,7 @@ def run(cfg):
     encoder = build_encoder(cfg.pretraining)
     encoder.load_state_dict(torch.load(cfg.path_to_model, map_location=cfg.device))
 
-    sensordbscan = SensorDBSCAN(encoder, cfg)
+    sensordbscan = SensorDBSCAN(encoder, cfg, avg_loss)
 
     logging.info('Getting predictions on train')
     encoder.eval()

@@ -169,6 +169,7 @@ class TSTransformerEncoder(nn.Module):
         output_emb_fin_proj = self.projection_bn(output_emb_proj)
         output_emb_fin_proj = self.projection_relu(output_emb_fin_proj)
         output_emb_fin_proj = self.projection_fin_linear(output_emb_fin_proj)
+        # output_emb_fin_proj = F.normalize(output_emb_fin_proj, p=2, dim=1)  # change distance function?
 
         if return_all:
             return output_pred, output_emb, output_emb_pool, output_emb_proj, output_emb_fin_proj
@@ -189,9 +190,10 @@ class SensorSCAN(nn.Module):
 
 
 class SensorDBSCAN(object):
-    def __init__(self, encoder, cfg):
+    def __init__(self, encoder, cfg, avg_loss):
         self.encoder = encoder
         self.cfg = cfg
+        self.avg_loss = avg_loss
 
         self.clustering_algorithm = DBSCAN
 
@@ -203,7 +205,7 @@ class SensorDBSCAN(object):
         return embs
 
     def cluster_embs(self, embs):
-        cluster_labels = self.clustering_algorithm(eps=self.cfg.epsilon*self.cfg.dbscan_epsilon_multiplier,
+        cluster_labels = self.clustering_algorithm(eps=(self.cfg.epsilon-self.avg_loss)*self.cfg.dbscan_epsilon_multiplier,
                                                    min_samples=self.cfg.min_samples, metric=self.cfg.metric,
                                                    max_mbytes_per_batch=self.cfg.max_mbytes_per_batch).fit_predict(embs)
 

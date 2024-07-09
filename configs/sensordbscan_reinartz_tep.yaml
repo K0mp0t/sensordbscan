@@ -59,7 +59,7 @@ pretraining:
 
   device: 'cuda'
 
-epochs: 20
+epochs: 15
 clustering_finetuning_epochs: 3
 
 encoder_dim: 64
@@ -73,13 +73,15 @@ min_samples: 1000
 max_triplets: 153600
 n_samples_to_select: 50
 ch_score_momentum: 0.95
-max_mbytes_per_batch: 6144
-dbscan_epsilon_multiplier: 0.95
+max_mbytes_per_batch: 8192
+dbscan_epsilon_multiplier: 0.9
 
 knn_neighbors: 50
 handle_outliers: False
 visualize: False
 visualize_final_state: True
+
+alpha: 0.0
 
 classes: 'all'
 #classes: [0, 1, 2, 3, 4, 5]

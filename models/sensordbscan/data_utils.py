@@ -65,7 +65,7 @@ def add_smaller_windows(X, y, embs, pad_masks, cfg, model):
     return expanded_X, expanded_y, expanded_embs, pad_masks
 
 
-def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch):
+def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch, prev_loss=0):
     dataloader = DataLoader(slices_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
     embs = list()
@@ -84,7 +84,7 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
 
     gc.collect()
     torch.cuda.empty_cache()
-    clustering_labels = DBSCAN(eps=cfg.epsilon*cfg.dbscan_epsilon_multiplier, min_samples=cfg.min_samples,
+    clustering_labels = DBSCAN(eps=(cfg.epsilon - prev_loss)*cfg.dbscan_epsilon_multiplier, min_samples=cfg.min_samples,
                                metric=cfg.metric, max_mbytes_per_batch=cfg.max_mbytes_per_batch).fit_predict(embs.cpu().numpy())
 
     outliers_factor = np.sum(clustering_labels == -1) / embs.shape[0]
@@ -96,7 +96,8 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch)
     logging.info(f'Epoch #{epoch}. Calinski-Harabasz score: {round(score, 2)}, #clusters: {nclusters}, outliers factor: {round(outliers_factor, 6)}')
 
     selected_indices = None
-    if (len(ch_scores) < 1 or score * cfg.ch_score_momentum < ch_scores[-1] or outliers_factor > 0.01) and epoch < cfg.epochs:
+    if ((len(ch_scores) < 1 or score * cfg.ch_score_momentum <= ch_scores[-1] or outliers_factor > 0.01)
+            and epoch < cfg.epochs):
         selected_indices = select_samples_to_label(embs.cpu().numpy(), clustering_labels,
                                                    np.array([ys[i] for i in indices]),
                                                    cfg.n_samples_to_select, indices, epoch)
@@ -196,7 +197,7 @@ class SlicesDataset(torch.utils.data.Dataset):
 
 
 class TripletsDataset(torch.utils.data.Dataset):
-    def __init__(self, X, y, embs, pad_masks, cfg, metric='euclidean'):
+    def __init__(self, X, y, embs, pad_masks, cfg):
         super().__init__()
 
         self.X = X
@@ -207,18 +208,19 @@ class TripletsDataset(torch.utils.data.Dataset):
         self.triplet_distances = torch.tensor([], dtype=torch.float32, device=cfg.device)
         self.cfg = cfg
 
-        if metric == 'euclidean':
-            distance_matrix = torch.norm(embs.unsqueeze(0) - embs.unsqueeze(1), dim=-1)
-        elif metric == 'cosine':
-            distance_matrix = torch.nn.functional.cosine_similarity(embs.unsqueeze(0), embs.unsqueeze(1), dim=-1)
+        if cfg.metric == 'euclidean':
+            distance_matrix = torch.nn.functional.pairwise_distance(embs.unsqueeze(0), embs.unsqueeze(1)).to(cfg.device)
+        elif cfg.metric == 'cosine':
+            distance_matrix = torch.nn.functional.cosine_similarity(embs.unsqueeze(0),
+                                                                    embs.unsqueeze(1), dim=-1).to(cfg.device)
         else:
-            raise ValueError(f'got unexpected distance metric: {metric}')
+            raise ValueError(f'got unexpected distance metric: {cfg.metric}')
 
         distance_matrix = distance_matrix.triu().to(cfg.device)
 
         # TODO: add logging in the following part
         # 2. construct, filter and sort triplet indices
-        for l in torch.unique(self.y):
+        for l in tqdm(torch.unique(self.y), desc='Constructing triplets'):
             positive_idxs = (self.y == l).nonzero()[:, 0]
             negative_idxs = (self.y != l).nonzero()[:, 0]
 

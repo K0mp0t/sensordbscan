@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from cuml import TSNE, UMAP
 import numpy as np
 import matplotlib
+import seaborn as sns
+from utils import build_costs_matrix
 
 matplotlib.use('Agg')
 
@@ -28,6 +30,8 @@ def visualize_all(embs, clustering_labels, gt_labels, selected_indices, cfg, epo
     # gt_labels_matched = gt_labels.copy()
     # for old_value, new_value in enumerate(label_matching):
     #     gt_labels_matched[gt_labels == old_value] = new_value
+
+    visualize_confusion_matrix(gt_labels, clustering_labels, nclusters=None, fn_postfix=epoch)
 
     visualize_clustering(umap_decomposed, tsne_decomposed, clustering_labels, gt_labels, epoch)
     if selected_indices is not None:
@@ -68,3 +72,11 @@ def visualize_selected_for_labelling(umap_decomposed, tsne_decomposed, indices, 
 
     fig.savefig(f'./visualization/sampling_{epoch}.png')
     plt.close(fig)
+
+
+def visualize_confusion_matrix(true_labels, cluster_labels, nclusters=None, fn_postfix='train'):
+    costs_matrix = build_costs_matrix(true_labels, cluster_labels, nclusters=nclusters)
+
+    fig, axes = plt.subplots(figsize=(15, 15))
+    sns.heatmap(costs_matrix / costs_matrix.sum(axis=1)[:, None], annot=True, ax=axes)
+    fig.savefig(f'./visualization/costs_matrix_{fn_postfix}.png')
