@@ -31,7 +31,7 @@ def build_triplet_optim(cfg, model):
     else:
         raise ValueError(f'got unexpected distance metric: {cfg.metric}')
     def triplet_loss_enhanced(a, p, n):
-        return (torch.nn.functional.triplet_margin_with_distance_loss(a, p, n, margin=cfg.epsilon, distance_function=distance_fn),
+        return (torch.nn.functional.triplet_margin_with_distance_loss(a, p, n, margin=cfg.epsilon, distance_function=None),
                 distance_fn(a.unsqueeze(0), p.unsqueeze(1)).mean())
 
     # TODO: finish distance function experiments, make some LR experiments
@@ -101,12 +101,13 @@ class NTXentLoss(torch.nn.Module):
         similarity_matrix = self.similarity_function(representations, representations)
 
         batch_size = zis.shape[0]
+        total_size = zis.shape[0] + zjs.shape[0]
 
         l_pos = torch.diag(similarity_matrix, batch_size)
         r_pos = torch.diag(similarity_matrix, -batch_size)
-        positives = torch.cat([l_pos, r_pos]).view(2 * batch_size, 1)
+        positives = torch.cat([l_pos, r_pos]).view(total_size, 1)
 
-        negatives = similarity_matrix[self.mask_samples_from_same_repr[:2*batch_size, :2*batch_size]].view(2 * batch_size, -1)
+        negatives = similarity_matrix[self.mask_samples_from_same_repr[:total_size, :total_size]].view(total_size, -1)
 
         logits = torch.cat((positives, negatives), dim=1)
         logits /= self.temperature
@@ -114,7 +115,7 @@ class NTXentLoss(torch.nn.Module):
         labels = torch.zeros(2 * batch_size).to(self.device).long()
         loss = self.criterion(logits, labels)
 
-        return loss / (2 * batch_size)
+        return loss / total_size
     
 class SCANLoss(torch.nn.Module):
     def __init__(self, entropy_weight):

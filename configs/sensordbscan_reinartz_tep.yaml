@@ -9,7 +9,7 @@ model: "sensordbscan"
 dataset: "reinartz_tep"
 
 # Size of a sliding window to generate a sequence of samples.
-window_sizes: [75, 100]
+window_sizes: [70, 85, 100]
 
 # Size of a step for sliding window to generate a sequence of samples.
 step_size: 5
@@ -22,14 +22,14 @@ eval_batch_size: 4096
 
 # Path to a .pth file with pretrained model.
 path_to_model:
-
-path_to_encoder: './saved_models/pretrained_encoder_reinartz_tep.pth'
+# path_to_encoder:
+path_to_encoder: './saved_models/pretrained_encoder_reinartz_tep_rope_ref.pth'
 
 pretraining:
   dataset_name: ${dataset}
   dataset_window_size: 300
   step_size: 1
-  train_batch_size: 1280
+  train_batch_size: 1024
   visualize_batch_size: 256
   num_features: 30
 
@@ -66,22 +66,22 @@ encoder_dim: 64
 encoder_lr: 1e-5
 
 device: 'cuda'
-batch_size: 1536
+batch_size: 1280
 metric: 'euclidean'
 epsilon: 1
 min_samples: 1000
-max_triplets: 153600
+max_triplets: 128000
 n_samples_to_select: 50
 ch_score_momentum: 0.95
-max_mbytes_per_batch: 8192
-dbscan_epsilon_multiplier: 0.9
+max_mbytes_per_batch: 16000
+dbscan_epsilon_multiplier: 0.95
 
 knn_neighbors: 50
-handle_outliers: False
+handle_outliers: True
 visualize: False
 visualize_final_state: True
 
-alpha: 0.0
+alpha: 0.05
 
 classes: 'all'
-#classes: [0, 1, 2, 3, 4, 5]
+#classes: [0, 1, 2]

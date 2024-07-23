@@ -7,9 +7,10 @@ def train_ssl_epoch(cfg, model, dataloader, loss_fn, optimizer):
     
     model.train()
     loss_sum = 0
-    
-    for n, (x_weak, y_weak, mask_weak, x_strong, y_strong, mask_strong, _) in tqdm(enumerate(dataloader), total=len(dataloader)):
 
+    pbar = tqdm(enumerate(dataloader), total=len(dataloader))
+    
+    for n, (x_weak, y_weak, mask_weak, x_strong, y_strong, mask_strong, _) in pbar:
         optimizer.zero_grad()
         
         cur_batch_size = x_weak.shape[0]
@@ -47,6 +48,9 @@ def train_ssl_epoch(cfg, model, dataloader, loss_fn, optimizer):
         optimizer.step()
         
         loss_sum += loss.item()
+
+        pbar.update()
+        pbar.set_description(f"Loss: {round(loss_sum / (n + 1), 4)}")
 
     return loss_sum / (n + 1)
 
@@ -92,6 +96,7 @@ def train_scan_epoch(cfg, epoch, encoder, clustering_model, loader, loss_fn, enc
 def train_triplet_epoch(cfg, model, dataloader, loss_fn, optimizer):
     model.train()
 
+    loss = 0
     triplet_loss = 0
 
     for (anchors, positives, negatives, a_masks, p_masks, n_masks) in tqdm(dataloader, desc='Training'):
@@ -111,9 +116,11 @@ def train_triplet_epoch(cfg, model, dataloader, loss_fn, optimizer):
 
         triplet_loss_, intra_loss_ = loss_fn(anchor_embs, positive_embs, negative_embs)
         triplet_loss += triplet_loss_.item()
-        loss = triplet_loss_ + intra_loss_
+        loss = (1 - cfg.alpha) * triplet_loss_ + cfg.alpha * intra_loss_
 
+        # loss_ = loss_fn(anchor_embs, positive_embs, negative_embs)
         loss.backward()
         optimizer.step()
+        # loss += loss_.item()
 
     return triplet_loss / len(dataloader)

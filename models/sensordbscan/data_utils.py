@@ -25,16 +25,16 @@ def build_pretraining_dataloader(cfg):
     train_dataloader = torch.utils.data.DataLoader(dataset=train_dataset,
                                                    batch_size=cfg.train_batch_size,
                                                    shuffle=True,
-                                                   drop_last=False,
+                                                   drop_last=True,
                                                    num_workers=4, pin_memory=True)
 
     return train_dataloader
 
 
 def add_smaller_windows(X, y, embs, pad_masks, cfg, model):
-    expanded_X = X.clone().to(cfg.device)
-    expanded_y = y.clone().to(cfg.device)
-    expanded_embs = embs.clone()
+    expanded_X = X.clone().cpu()
+    expanded_y = y.clone().cpu()
+    expanded_embs = embs.clone().cpu()
 
     for window_size in sorted(cfg.window_sizes)[:-1]:
         ws_multiplier = (max(cfg.window_sizes) - window_size) // cfg.step_size + 1
@@ -42,8 +42,8 @@ def add_smaller_windows(X, y, embs, pad_masks, cfg, model):
         w_pad_masks = torch.ones((X.shape[0] * ws_multiplier, X.shape[1]), dtype=torch.bool, device=cfg.device)
         w_pad_masks[:, window_size:] = 0
         w_X = torch.zeros((X.shape[0] * ws_multiplier, X.shape[1], X.shape[2]), dtype=torch.float32, device=cfg.device)
-        w_y = y.repeat(ws_multiplier).to(cfg.device)
-        w_embs = torch.empty((X.shape[0] * ws_multiplier, embs.shape[1]), dtype=torch.float32, device=cfg.device)
+        w_y = y.repeat(ws_multiplier).cpu()
+        w_embs = torch.empty((X.shape[0] * ws_multiplier, embs.shape[1]), dtype=torch.float32, device='cpu')
 
         for i in range(ws_multiplier):
             shift_value = i * cfg.step_size
@@ -53,12 +53,12 @@ def add_smaller_windows(X, y, embs, pad_masks, cfg, model):
             with torch.no_grad():
                 pred = model(batch_X, batch_masks)[1]
 
-            w_embs[i * cfg.batch_size: (i + 1) * cfg.batch_size] = pred
+            w_embs[i * cfg.batch_size: (i + 1) * cfg.batch_size] = pred.cpu()
 
-        expanded_X = torch.cat([expanded_X, w_X], dim=0)
+        expanded_X = torch.cat([expanded_X, w_X.cpu()], dim=0)
         expanded_y = torch.cat([expanded_y, w_y], dim=0)
         expanded_embs = torch.cat([expanded_embs, w_embs], dim=0)
-        pad_masks = torch.cat([pad_masks, w_pad_masks], dim=0)
+        pad_masks = torch.cat([pad_masks, w_pad_masks.cpu()], dim=0)
 
         assert expanded_embs.shape[0] == expanded_y.shape[0] == expanded_X.shape[0] == pad_masks.shape[0]
 
@@ -84,14 +84,14 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch,
 
     gc.collect()
     torch.cuda.empty_cache()
-    clustering_labels = DBSCAN(eps=(cfg.epsilon - prev_loss)*cfg.dbscan_epsilon_multiplier, min_samples=cfg.min_samples,
+    clustering_labels = DBSCAN(eps=cfg.epsilon*cfg.dbscan_epsilon_multiplier, min_samples=cfg.min_samples,
                                metric=cfg.metric, max_mbytes_per_batch=cfg.max_mbytes_per_batch).fit_predict(embs.cpu().numpy())
 
     outliers_factor = np.sum(clustering_labels == -1) / embs.shape[0]
 
     nclusters = np.unique(clustering_labels).shape[0]
 
-    score = calinski_harabasz_score(embs.detach().cpu().numpy(), clustering_labels) if nclusters > 1 else 0
+    score = calinski_harabasz_score(embs.cpu().numpy(), clustering_labels) if nclusters > 1 else 0
 
     logging.info(f'Epoch #{epoch}. Calinski-Harabasz score: {round(score, 2)}, #clusters: {nclusters}, outliers factor: {round(outliers_factor, 6)}')
 
@@ -116,12 +116,12 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch,
     X_ = torch.stack([xy_pairs[i][0] for i in range(len(indices))], dim=0)
     y_ = torch.IntTensor([xy_pairs[i][1] for i in range(len(indices))])
     embs_ = embs[indices]
-    pad_masks = torch.ones(*X_.shape[:-1], dtype=torch.bool, device=cfg.device)
+    pad_masks = torch.ones(*X_.shape[:-1], dtype=torch.bool, device='cpu')
 
     if len(cfg.window_sizes) > 1:
-        X_, y_, embs_, pad_masks = add_smaller_windows(X_, y_, embs_, pad_masks, cfg, model)
+        X_, y_, embs_, pad_masks = add_smaller_windows(X_.cpu(), y_.cpu(), embs_.cpu(), pad_masks, cfg, model)
 
-    triplets_dataset = TripletsDataset(X_.cpu(), y_.cpu(), embs_, pad_masks.cpu(), cfg)
+    triplets_dataset = TripletsDataset(X_, y_, embs_, pad_masks, cfg)
     triplets_loader = torch.utils.data.DataLoader(dataset=triplets_dataset,
                                                   batch_size=cfg.batch_size,
                                                   shuffle=True,

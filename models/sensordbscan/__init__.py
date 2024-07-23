@@ -73,7 +73,7 @@ def run(cfg):
 
     if cfg.path_to_model is None:
         encoder = build_encoder(cfg.pretraining)
-        if os.path.exists(cfg.path_to_encoder):
+        if cfg.path_to_encoder is not None and os.path.exists(cfg.path_to_encoder):
             logging.info('Using pretrained encoder')
             encoder.load_state_dict(torch.load(cfg.path_to_encoder))
         else:
@@ -84,10 +84,7 @@ def run(cfg):
                 avg_loss = train_ssl_epoch(cfg.pretraining, encoder, pretraining_loader, loss_fn, optimizer)
                 logging.info(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
 
-            if cfg.path_to_encoder != '':
-                torch.save(encoder.state_dict(), cfg.path_to_encoder)
-            else:
-                torch.save(encoder.state_dict(), f'pretrained_encoder_{cfg.dataset}.pth')
+            torch.save(encoder.state_dict(), f'./saved_models/pretrained_encoder_{cfg.dataset}_rope_ref.pth')
 
         logging.info('Training encoder with triplet loss')
         indices = list()
@@ -99,7 +96,6 @@ def run(cfg):
             triplets_loader, indices, ch_scores = build_triplets_loader(cfg, slices_dataset, encoder, indices,
                                                                         ch_scores, epoch, avg_loss)
             avg_loss = train_triplet_epoch(cfg, encoder, triplets_loader, loss_fn, optimizer)
-            # TODO: log loss before and after
             logging.info(f'Epoch #{epoch}. loss = {avg_loss:10.8f}')
 
         # for epoch in range(cfg.epochs, cfg.epochs+cfg.clustering_finetuning_epochs):
@@ -123,6 +119,8 @@ def run(cfg):
     encoder.eval()
     train_embs = []
     train_label = []
+
+    # TODO: check train and test loaders here (last epochs yields 25+ clusters for reinartz on train subset, however we get much less here)
 
     for X, time_index, label in tqdm(train_loader, desc='Getting predictions on train'):
         X = torch.FloatTensor(X).to(cfg.device)
