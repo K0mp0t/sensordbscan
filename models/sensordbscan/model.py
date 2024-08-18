@@ -5,14 +5,10 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.nn import functional as F
-from torch.nn.modules import (BatchNorm1d, Dropout, Linear, MultiheadAttention,
-                              TransformerEncoderLayer)
+from torch.nn.modules import BatchNorm1d, Dropout, Linear
 # from sklearn.cluster import DBSCAN
 from cuml.cluster import DBSCAN
 from cuml.neighbors import KNeighborsClassifier
-
-
-from .reference_attention import MultiHeadAttention as ReferenceMultiHeadAttention
 
 
 def build_encoder(cfg):
@@ -45,29 +41,41 @@ def init_weights(m):
         nn.init.xavier_normal_(m.weight)
         m.bias.data.fill_(0.)
 
+class ScaledDotProductAttention(nn.Module):
+
+    def forward(self, query, key, value, mask=None):
+        dk = query.size()[-1]
+        scores = query.matmul(key.transpose(-2, -1)) / math.sqrt(dk)
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, -1e9)
+        attention = F.softmax(scores, dim=-1)
+        return attention.matmul(value)
+
+
 class MultiHeadAttentionWithRoPE(nn.Module):
-    def __init__(self, d_model=128, n_heads=8, dropout=0.1):
+    def __init__(self,
+                 in_features,
+                 head_num,
+                 bias=True,
+                 activation=F.relu):
         super(MultiHeadAttentionWithRoPE, self).__init__()
-
-        assert d_model % n_heads == 0, "nheads should divide d_model"
-
-        self.n_heads = n_heads
-        self.d_model = d_model
-        self.dropout = dropout
-        self.head_dim = d_model // n_heads
-
-        self.compute_query = nn.Linear(self.d_model, self.d_model, bias=False)
-        self.compute_key = nn.Linear(self.d_model, self.d_model, bias=False)
-        self.compute_value = nn.Linear(self.d_model, self.d_model, bias=False)
-        self.compute_output = nn.Linear(self.d_model, self.d_model, bias=False)
-        self.attn_dropout = nn.Dropout(self.dropout)
-        self.resid_dropout = nn.Dropout(self.dropout)
+        if in_features % head_num != 0:
+            raise ValueError(
+                '`in_features`({}) should be divisible by `head_num`({})'.format(in_features, head_num))
+        self.in_features = in_features
+        self.head_num = head_num
+        self.activation = activation
+        self.bias = bias
+        self.linear_q = nn.Linear(in_features, in_features, bias)
+        self.linear_k = nn.Linear(in_features, in_features, bias)
+        self.linear_v = nn.Linear(in_features, in_features, bias)
+        self.linear_o = nn.Linear(in_features, in_features, bias)
 
         self.batch_first = False
-
+        self.head_dim = in_features // head_num
 
     def _apply_rotary_emb(self, query, key, theta=10000.0):
-        seqlen, _, _, _ = query.shape
+        _, seqlen, _ = query.shape
         device = query.device
 
         query_real, query_imag = query.float().reshape(query.shape[:-1] + (-1, 2)).unbind(-1)
@@ -83,59 +91,75 @@ class MultiHeadAttentionWithRoPE(nn.Module):
         key_real_rotated = torch.zeros_like(key, device=device)
         key_imag_rotated = torch.zeros_like(key, device=device)
 
-        query_real_rotated[..., 0::2] = query_real * cosines.unsqueeze(1)
-        query_real_rotated[..., 1::2] = query_real * sines.unsqueeze(1)
+        query_real_rotated[..., 0::2] = query_real * cosines
+        query_real_rotated[..., 1::2] = query_real * sines
 
-        query_imag_rotated[..., 0::2] = -query_imag * sines.unsqueeze(1)
-        query_imag_rotated[..., 1::2] = query_imag * cosines.unsqueeze(1)
+        query_imag_rotated[..., 0::2] = -query_imag * sines
+        query_imag_rotated[..., 1::2] = query_imag * cosines
 
-        key_real_rotated[..., 0::2] = key_real * cosines.unsqueeze(1)
-        key_real_rotated[..., 1::2] = key_real * sines.unsqueeze(1)
+        key_real_rotated[..., 0::2] = key_real * cosines
+        key_real_rotated[..., 1::2] = key_real * sines
 
-        key_imag_rotated[..., 0::2] = -key_imag * sines.unsqueeze(1)
-        key_imag_rotated[..., 1::2] = key_imag * cosines.unsqueeze(1)
+        key_imag_rotated[..., 0::2] = -key_imag * sines
+        key_imag_rotated[..., 1::2] = key_imag * cosines
 
         query_out = query_real_rotated + query_imag_rotated
         key_out = key_real_rotated + key_imag_rotated
 
         return query_out, key_out
 
-    def compute_query_key_value_scores(self, query, key, value, src_key_padding_mask=None):
-        # attn_scores = query.permute(1, 2, 0, 3) @ key.permute((1, 2, 3, 0)) / math.sqrt(self.head_dim)
-        attn_scores = query @ key.permute((0, 2, 1)) / math.sqrt(self.head_dim)
+    def forward(self, q, k, v, attn_mask=None, src_key_padding_mask=None):
+        q, k, v = self.linear_q(q), self.linear_k(k), self.linear_v(v)
+        if self.activation is not None:
+            q = self.activation(q)
+            k = self.activation(k)
+            v = self.activation(v)
 
-        # if src_key_padding_mask is not None:
-        #     src_key_padding_mask = src_key_padding_mask.unsqueeze(1).unsqueeze(1).expand(-1, attn_scores.shape[1], attn_scores.shape[2], -1)
-        #     attn_scores[src_key_padding_mask.bool()] = -torch.inf
+        q = self._reshape_to_batches(q)
+        k = self._reshape_to_batches(k)
+        v = self._reshape_to_batches(v)
 
-        attn_scores = torch.softmax(attn_scores, dim=-1)
-        attn_scores = self.attn_dropout(attn_scores)
+        q, k = self._apply_rotary_emb(q, k)
 
-        # output = attn_scores @ value.permute(1, 2, 0, 3)
-        # output = output.permute(2, 0, 1, 3)
-        output = attn_scores @ value
+        if src_key_padding_mask is not None:
+            src_key_padding_mask = src_key_padding_mask.unsqueeze(1).repeat(self.head_num, 1, 1)
+        y = ScaledDotProductAttention()(q, k, v, src_key_padding_mask)
+        y = self._reshape_from_batches(y)
 
-        return output, attn_scores
+        y = self.linear_o(y)
+        if self.activation is not None:
+            y = self.activation(y)
+        return y
 
-    def forward(self, query, key, value, attn_mask=None, src_key_padding_mask=None):
-        seqlen, batch_size, _ = query.shape
+    @staticmethod
+    def gen_history_mask(x):
+        """Generate the mask that only uses history data.
 
-        query = self.compute_query(query)
-        key = self.compute_key(key)
-        value = self.compute_value(value)
-        query = query.view(seqlen, batch_size, self.n_heads, self.head_dim).permute(2, 1, 0, 3).reshape(-1, seqlen, self.head_dim)
-        key = key.view(seqlen, batch_size, self.n_heads, self.head_dim).permute(2, 1, 0, 3).reshape(-1, seqlen, self.head_dim)
-        value = value.view(seqlen, batch_size, self.n_heads, self.head_dim).permute(2, 1, 0, 3).reshape(-1, seqlen, self.head_dim)
+        :param x: Input tensor.
+        :return: The mask.
+        """
+        batch_size, seq_len, _ = x.size()
+        return torch.tril(torch.ones(seq_len, seq_len)).view(1, seq_len, seq_len).repeat(batch_size, 1, 1)
 
-        # query, key = self._apply_rotary_emb(query, key)
+    def _reshape_to_batches(self, x):
+        seq_len, batch_size, in_feature = x.size()
+        sub_dim = in_feature // self.head_num
+        return x.reshape(seq_len, batch_size, self.head_num, sub_dim) \
+            .permute(1, 2, 0, 3) \
+            .reshape(batch_size * self.head_num, seq_len, sub_dim)
 
-        output, attn_score = self.compute_query_key_value_scores(query, key, value, src_key_padding_mask=src_key_padding_mask)
-        output = output.reshape(self.n_heads, batch_size, seqlen, self.head_dim).permute(1, 2, 0, 3)
-        attn_score = attn_score.reshape(self.n_heads, batch_size, seqlen, self.head_dim).permute(1, 2, 0, 3)
+    def _reshape_from_batches(self, x):
+        batch_size, seq_len, in_feature = x.size()
+        batch_size //= self.head_num
+        out_dim = in_feature * self.head_num
+        return x.reshape(batch_size, self.head_num, seq_len, in_feature) \
+            .permute(2, 0, 1, 3) \
+            .reshape(seq_len, batch_size, out_dim)
 
-        output = output.transpose(1, 2).contiguous().view(seqlen, batch_size, -1)
-        output = self.resid_dropout(self.compute_output(output))
-        return output, attn_score
+    def extra_repr(self):
+        return 'in_features={}, head_num={}, bias={}, activation={}'.format(
+            self.in_features, self.head_num, self.bias, self.activation,
+        )
 
 
 class TransformerBatchNormEncoderLayer(nn.modules.Module):
@@ -184,7 +208,7 @@ class TransformerEncoderLayerWithCustomAttention(nn.modules.Module):
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="gelu"):
         super(TransformerEncoderLayerWithCustomAttention, self).__init__()
         # self.self_attn = MultiHeadAttentionWithRoPE(d_model, nhead, dropout=dropout)
-        self.self_attn = ReferenceMultiHeadAttention(d_model, nhead)
+        self.self_attn = MultiHeadAttentionWithRoPE(d_model, nhead)
 
         self.linear1 = Linear(d_model, dim_feedforward)
         self.dropout = Dropout(dropout)
@@ -306,7 +330,6 @@ class SensorDBSCAN(object):
     def __init__(self, encoder, cfg, avg_loss):
         self.encoder = encoder
         self.cfg = cfg
-        self.avg_loss = avg_loss
 
         self.clustering_algorithm = DBSCAN
 
@@ -318,11 +341,12 @@ class SensorDBSCAN(object):
         return embs
 
     def cluster_embs(self, embs):
-        cluster_labels = self.clustering_algorithm(eps=(self.cfg.epsilon-self.avg_loss)*self.cfg.dbscan_epsilon_multiplier,
-                                                   min_samples=self.cfg.min_samples, metric=self.cfg.metric,
+        min_samples = int(embs.shape[0] * self.cfg.min_cluster_fraction)
+        cluster_labels = self.clustering_algorithm(eps=self.cfg.epsilon*self.cfg.dbscan_epsilon_multiplier,
+                                                   min_samples=min_samples, metric=self.cfg.metric,
                                                    max_mbytes_per_batch=self.cfg.max_mbytes_per_batch).fit_predict(embs)
 
-        if self.cfg.handle_outliers:
+        if self.cfg.handle_outliers and -1 in cluster_labels and len(set(cluster_labels)) > 2:
             knn = KNeighborsClassifier(n_neighbors=self.cfg.knn_neighbors, metric=self.cfg.metric)
             knn.fit(embs[cluster_labels != -1], cluster_labels[cluster_labels != -1])
 

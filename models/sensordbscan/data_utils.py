@@ -12,6 +12,8 @@ from fddbenchmark import FDDDataloader, FDDDataset
 from tqdm import tqdm, trange
 import scipy
 import logging
+
+from models.sensordbscan.utils import pairwise_euclidean_distance
 from models.sensordbscan.visualization_utils import visualize_all
 from utils import build_costs_matrix
 import torch.nn.functional as F
@@ -46,8 +48,11 @@ def add_smaller_windows(X, y, embs, pad_masks, cfg, model):
         w_embs = torch.empty((X.shape[0] * ws_multiplier, embs.shape[1]), dtype=torch.float32, device='cpu')
 
         for i in range(ws_multiplier):
-            shift_value = i * cfg.step_size
-            w_X[i * X.shape[0]: (i + 1) * X.shape[0], :window_size] = X[:, shift_value: shift_value + window_size]
+            s = i * cfg.step_size
+            # ls = torch.randint(0, w_X.shape[1] - window_size, (X.shape[0], ), device=cfg.device)
+            # ls_indexer = torch.stack([torch.arange(i, i+window_size) for i in ls])
+            # w_X[i * X.shape[0]: (i + 1) * X.shape[0], ls_indexer] = X[:, s: s + window_size].to(cfg.device)
+            w_X[i * X.shape[0]: (i + 1) * X.shape[0], :window_size] = X[:, s: s + window_size].to(cfg.device)
 
         for i, (batch_X, batch_masks) in enumerate(zip(w_X.split(cfg.batch_size), w_pad_masks.split(cfg.batch_size))):
             with torch.no_grad():
@@ -66,25 +71,26 @@ def add_smaller_windows(X, y, embs, pad_masks, cfg, model):
 
 
 def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch, prev_loss=0):
-    dataloader = DataLoader(slices_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    # dataloader = DataLoader(slices_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
     embs = list()
     ys = list()
-    pad_mask = torch.ones((dataloader.batch_size, max(cfg.window_sizes)), dtype=torch.bool, device=cfg.device)
-    for X, y in tqdm(dataloader, desc=f'Epoch #{epoch}. Calculating embeddings'):
+    pad_mask = torch.ones((cfg.eval_batch_size, max(cfg.window_sizes)), dtype=torch.bool, device=cfg.device)
+    for X, _, y in tqdm(slices_dataset, desc=f'Epoch #{epoch}. Calculating embeddings'):
+        X = torch.as_tensor(X, dtype=torch.float32)
+        y = torch.as_tensor(y, dtype=torch.int32)
         with torch.no_grad():
             pred = model(X.to(cfg.device), pad_mask[:X.shape[0]])
 
         embs.append(pred[1])
-        ys.extend(y.cpu().numpy().tolist())
+        ys.extend(y.numpy().tolist())
 
     embs = torch.cat(embs, dim=0)
     # with open('embeds.npy', 'wb') as f:
     #     np.save(f, embs.cpu().numpy())
 
-    gc.collect()
-    torch.cuda.empty_cache()
-    clustering_labels = DBSCAN(eps=cfg.epsilon*cfg.dbscan_epsilon_multiplier, min_samples=cfg.min_samples,
+    min_samples = int(embs.shape[0] * cfg.min_cluster_fraction)
+    clustering_labels = DBSCAN(eps=cfg.epsilon*cfg.dbscan_epsilon_multiplier, min_samples=min_samples,
                                metric=cfg.metric, max_mbytes_per_batch=cfg.max_mbytes_per_batch).fit_predict(embs.cpu().numpy())
 
     outliers_factor = np.sum(clustering_labels == -1) / embs.shape[0]
@@ -112,12 +118,21 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch,
 
     ch_scores.append(score)
 
-    xy_pairs = [slices_dataset[i] for i in indices]
-    X_ = torch.stack([xy_pairs[i][0] for i in range(len(indices))], dim=0)
-    y_ = torch.IntTensor([xy_pairs[i][1] for i in range(len(indices))])
+    # xy_pairs = [slices_dataset[i // cfg.eval_batch_size] for i in indices]
+    # X_ = torch.stack([torch.as_tensor(xy_pairs[c][0][i % cfg.eval_batch_size], dtype=torch.float32)
+    #                   for c, i in enumerate(indices)], dim=0)
+    # y_ = torch.IntTensor([xy_pairs[c][2][i % cfg.eval_batch_size] for c, i in enumerate(indices)])
+    X_ = torch.stack([torch.as_tensor(slices_dataset[i // cfg.eval_batch_size][0][i % cfg.eval_batch_size],
+                                      dtype=torch.float32) for i in indices], dim=0)
+    y_ = torch.IntTensor([slices_dataset[i // cfg.eval_batch_size][2][i % cfg.eval_batch_size] for i in indices])
     embs_ = embs[indices]
     pad_masks = torch.ones(*X_.shape[:-1], dtype=torch.bool, device='cpu')
 
+    del embs
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    # TODO: make smaller windows with variable padding position
     if len(cfg.window_sizes) > 1:
         X_, y_, embs_, pad_masks = add_smaller_windows(X_.cpu(), y_.cpu(), embs_.cpu(), pad_masks, cfg, model)
 
@@ -209,7 +224,8 @@ class TripletsDataset(torch.utils.data.Dataset):
         self.cfg = cfg
 
         if cfg.metric == 'euclidean':
-            distance_matrix = torch.nn.functional.pairwise_distance(embs.unsqueeze(0), embs.unsqueeze(1)).to(cfg.device)
+            # distance_matrix = torch.nn.functional.pairwise_distance(embs.unsqueeze(0), embs.unsqueeze(1)).to(cfg.device)
+            distance_matrix = pairwise_euclidean_distance(embs, embs).to(cfg.device)
         elif cfg.metric == 'cosine':
             distance_matrix = torch.nn.functional.cosine_similarity(embs.unsqueeze(0),
                                                                     embs.unsqueeze(1), dim=-1).to(cfg.device)
@@ -275,9 +291,12 @@ def select_samples_to_label(embs, clustering_labels, known_ys, number_samples_to
         costs_matrix = build_costs_matrix(known_ys, pred_ys, nclusters=unique_clusters.shape[0])
         costs_matrix[costs_matrix.argmax(axis=0), np.arange(costs_matrix.shape[1])] = 0
 
-        weights = np.log(costs_matrix.sum(axis=0) + costs_matrix.mean())
-        weights = np.maximum(weights, 0)
-        weights = weights / weights.sum()
+        if costs_matrix.sum() == 0:
+            weights = cluster_sizes / cluster_sizes.sum()
+        else:
+            weights = np.log(costs_matrix.sum(axis=0) + costs_matrix.mean())
+            weights = np.maximum(weights, 0)
+            weights = weights / weights.sum()
     else:
         weights = cluster_sizes / cluster_sizes.sum()
 

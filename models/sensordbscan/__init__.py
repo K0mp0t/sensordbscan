@@ -89,20 +89,16 @@ def run(cfg):
         logging.info('Training encoder with triplet loss')
         indices = list()
         ch_scores = list()
-        slices_dataset = SlicesDataset(dataset.df, dataset.label, dataset.train_mask, max(cfg.window_sizes), cfg.step_size)
+
+        slices_dataset = train_loader
         loss_fn, optimizer = build_triplet_optim(cfg, encoder)
+
         avg_loss = 0
         for epoch in range(cfg.epochs):
             triplets_loader, indices, ch_scores = build_triplets_loader(cfg, slices_dataset, encoder, indices,
                                                                         ch_scores, epoch, avg_loss)
             avg_loss = train_triplet_epoch(cfg, encoder, triplets_loader, loss_fn, optimizer)
             logging.info(f'Epoch #{epoch}. loss = {avg_loss:10.8f}')
-
-        # for epoch in range(cfg.epochs, cfg.epochs+cfg.clustering_finetuning_epochs):
-        #     triplets_loader, indices, ch_scores = build_triplets_loader(cfg, slices_dataset, encoder, indices,
-        #                                                                 ch_scores, epoch)
-        #     avg_loss = train_triplet_epoch(cfg, encoder, triplets_loader, loss_fn, optimizer)
-        #     logging.info(f'Epoch #{epoch}. loss = {avg_loss:10.8f}')
 
         cfg.path_to_model = f'saved_models/sensordbscan_encoder_{dataset_name}.pth'
         torch.save(encoder.state_dict(), cfg.path_to_model)
@@ -119,8 +115,6 @@ def run(cfg):
     encoder.eval()
     train_embs = []
     train_label = []
-
-    # TODO: check train and test loaders here (last epochs yields 25+ clusters for reinartz on train subset, however we get much less here)
 
     for X, time_index, label in tqdm(train_loader, desc='Getting predictions on train'):
         X = torch.FloatTensor(X).to(cfg.device)
