@@ -166,8 +166,7 @@ class TransformerBatchNormEncoderLayer(nn.modules.Module):
 
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="gelu"):
         super(TransformerBatchNormEncoderLayer, self).__init__()
-        # self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout)
-        self.self_attn = MultiHeadAttentionWithRoPE(d_model, nhead, dropout=dropout)
+        self.self_attn = MultiHeadAttentionWithRoPE(d_model, nhead)
 
         self.linear1 = Linear(d_model, dim_feedforward)
         self.dropout = Dropout(dropout)
@@ -207,7 +206,6 @@ class TransformerEncoderLayerWithCustomAttention(nn.modules.Module):
 
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="gelu"):
         super(TransformerEncoderLayerWithCustomAttention, self).__init__()
-        # self.self_attn = MultiHeadAttentionWithRoPE(d_model, nhead, dropout=dropout)
         self.self_attn = MultiHeadAttentionWithRoPE(d_model, nhead)
 
         self.linear1 = Linear(d_model, dim_feedforward)

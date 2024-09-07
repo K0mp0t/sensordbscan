@@ -1,4 +1,6 @@
 from typing import Union, List
+
+import pandas as pd
 from scipy.optimize import linear_sum_assignment
 import numpy as np
 from fddbenchmark import FDDDataset
@@ -101,6 +103,18 @@ def make_rieth_imbalance(train_mask):
     imbalance_train_mask.loc[:] = False
     imbalance_train_mask.loc[imbalance_train_runs] = True
     return imbalance_train_mask
+
+def take_dataset_fraction(dataset, cfg):
+    labels = pd.merge(dataset.train_mask, dataset.label, on=['run_id', 'sample'])
+    labels = labels[labels.train_mask]
+    labels = labels.groupby('labels').sample(frac=cfg.fraction, random_state=cfg.random_seed)
+
+    fractioned_train_mask = dataset.train_mask.copy()
+    fractioned_train_mask.loc[:] = False
+    fractioned_train_mask.loc[labels.index] = True
+
+    return fractioned_train_mask
+
 
 def print_clustering(metrics, logging):
     lines = []

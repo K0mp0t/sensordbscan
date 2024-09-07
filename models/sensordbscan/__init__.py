@@ -12,7 +12,7 @@ from tqdm.auto import tqdm
 import pandas as pd
 from fddbenchmark import FDDDataset, FDDDataloader
 import logging
-from utils import exclude_columns, make_rieth_imbalance, normalize, exclude_classes
+from utils import exclude_columns, make_rieth_imbalance, normalize, exclude_classes, take_dataset_fraction
 import gc
 import cuml
 
@@ -42,8 +42,10 @@ def run(cfg):
     exclude_classes(dataset, cfg.classes)
 
     normalize(dataset)
-    if dataset_name == 'rieth_tep':
-        dataset.train_mask = make_rieth_imbalance(dataset.train_mask)
+    # if dataset_name == 'rieth_tep':
+    #     dataset.train_mask = make_rieth_imbalance(dataset.train_mask)
+
+    dataset.train_mask = take_dataset_fraction(dataset, cfg)
 
     logging.info('Creating dataloaders')
 
@@ -84,7 +86,7 @@ def run(cfg):
                 avg_loss = train_ssl_epoch(cfg.pretraining, encoder, pretraining_loader, loss_fn, optimizer)
                 logging.info(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
 
-            torch.save(encoder.state_dict(), f'./saved_models/pretrained_encoder_{cfg.dataset}_rope_ref.pth')
+            torch.save(encoder.state_dict(), f'./saved_models/pretrained_encoder_{cfg.dataset}_rope.pth')
 
         logging.info('Training encoder with triplet loss')
         indices = list()
@@ -126,6 +128,12 @@ def run(cfg):
     train_embs = torch.cat(train_embs, dim=0)
     train_label = pd.concat(train_label).astype('int')
 
+    np.save(f'embeddings_{dataset_name}_train.npy', train_embs.cpu().numpy())
+    np.save(f'labels_{dataset_name}_train.npy', train_label)
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
     train_pred = sensordbscan.cluster_embs(train_embs.cpu().numpy())
     train_pred = pd.Series(train_pred, index=train_label.index)
 
@@ -141,6 +149,12 @@ def run(cfg):
 
     test_embs = torch.cat(test_embs, dim=0)
     test_label = pd.concat(test_label).astype('int')
+
+    np.save(f'embeddings_{dataset_name}_test.npy', test_embs.cpu().numpy())
+    np.save(f'labels_{dataset_name}_test.npy', test_label)
+
+    gc.collect()
+    torch.cuda.empty_cache()
 
     test_pred = sensordbscan.cluster_embs(test_embs.cpu().numpy())
     test_pred = pd.Series(test_pred, index=test_label.index)

@@ -1,6 +1,4 @@
-import time
 import gc
-from typing import List
 
 import numpy as np
 import pandas as pd
@@ -16,7 +14,6 @@ import logging
 from models.sensordbscan.utils import pairwise_euclidean_distance
 from models.sensordbscan.visualization_utils import visualize_all
 from utils import build_costs_matrix
-import torch.nn.functional as F
 
 
 def build_pretraining_dataloader(cfg):
@@ -38,8 +35,10 @@ def add_smaller_windows(X, y, embs, pad_masks, cfg, model):
     expanded_y = y.clone().cpu()
     expanded_embs = embs.clone().cpu()
 
+    step_size = int(cfg.step_size / cfg.fraction)
+
     for window_size in sorted(cfg.window_sizes)[:-1]:
-        ws_multiplier = (max(cfg.window_sizes) - window_size) // cfg.step_size + 1
+        ws_multiplier = (max(cfg.window_sizes) - window_size) // step_size + 1
 
         w_pad_masks = torch.ones((X.shape[0] * ws_multiplier, X.shape[1]), dtype=torch.bool, device=cfg.device)
         w_pad_masks[:, window_size:] = 0
@@ -48,10 +47,7 @@ def add_smaller_windows(X, y, embs, pad_masks, cfg, model):
         w_embs = torch.empty((X.shape[0] * ws_multiplier, embs.shape[1]), dtype=torch.float32, device='cpu')
 
         for i in range(ws_multiplier):
-            s = i * cfg.step_size
-            # ls = torch.randint(0, w_X.shape[1] - window_size, (X.shape[0], ), device=cfg.device)
-            # ls_indexer = torch.stack([torch.arange(i, i+window_size) for i in ls])
-            # w_X[i * X.shape[0]: (i + 1) * X.shape[0], ls_indexer] = X[:, s: s + window_size].to(cfg.device)
+            s = i * step_size
             w_X[i * X.shape[0]: (i + 1) * X.shape[0], :window_size] = X[:, s: s + window_size].to(cfg.device)
 
         for i, (batch_X, batch_masks) in enumerate(zip(w_X.split(cfg.batch_size), w_pad_masks.split(cfg.batch_size))):
@@ -73,6 +69,9 @@ def add_smaller_windows(X, y, embs, pad_masks, cfg, model):
 def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch, prev_loss=0):
     # dataloader = DataLoader(slices_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
+    gc.collect()
+    torch.cuda.empty_cache()
+
     embs = list()
     ys = list()
     pad_mask = torch.ones((cfg.eval_batch_size, max(cfg.window_sizes)), dtype=torch.bool, device=cfg.device)
@@ -89,6 +88,9 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch,
     # with open('embeds.npy', 'wb') as f:
     #     np.save(f, embs.cpu().numpy())
 
+    gc.collect()
+    torch.cuda.empty_cache()
+
     min_samples = int(embs.shape[0] * cfg.min_cluster_fraction)
     clustering_labels = DBSCAN(eps=cfg.epsilon*cfg.dbscan_epsilon_multiplier, min_samples=min_samples,
                                metric=cfg.metric, max_mbytes_per_batch=cfg.max_mbytes_per_batch).fit_predict(embs.cpu().numpy())
@@ -102,8 +104,9 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch,
     logging.info(f'Epoch #{epoch}. Calinski-Harabasz score: {round(score, 2)}, #clusters: {nclusters}, outliers factor: {round(outliers_factor, 6)}')
 
     selected_indices = None
-    if ((len(ch_scores) < 1 or score * cfg.ch_score_momentum <= ch_scores[-1] or outliers_factor > 0.01)
-            and epoch < cfg.epochs):
+    # if ((len(ch_scores) < 1 or score * cfg.ch_score_momentum <= ch_scores[-1] or outliers_factor > 0.01)
+    #         and epoch < cfg.epochs):
+    if True:
         selected_indices = select_samples_to_label(embs.cpu().numpy(), clustering_labels,
                                                    np.array([ys[i] for i in indices]),
                                                    cfg.n_samples_to_select, indices, epoch)
@@ -225,7 +228,7 @@ class TripletsDataset(torch.utils.data.Dataset):
 
         if cfg.metric == 'euclidean':
             # distance_matrix = torch.nn.functional.pairwise_distance(embs.unsqueeze(0), embs.unsqueeze(1)).to(cfg.device)
-            distance_matrix = pairwise_euclidean_distance(embs, embs).to(cfg.device)
+            distance_matrix = pairwise_euclidean_distance(embs.to(cfg.device), embs.to(cfg.device))
         elif cfg.metric == 'cosine':
             distance_matrix = torch.nn.functional.cosine_similarity(embs.unsqueeze(0),
                                                                     embs.unsqueeze(1), dim=-1).to(cfg.device)
