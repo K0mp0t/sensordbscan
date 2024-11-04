@@ -14,7 +14,8 @@ window_sizes: [70, 85, 100]
 # Size of a step for sliding window to generate a sequence of samples.
 step_size: 1
 
-fraction: 0.2
+train_fraction: 0.2
+test_fraction: 0.2
 
 # Random seed of a training process makes results reproducable.
 random_seed: 0
@@ -24,7 +25,7 @@ eval_batch_size: 4096
 
 # Path to a .pth file with pretrained model.
 path_to_model:
-path_to_encoder: './saved_models/pretrained_encoder_rieth_tep_rope.pth'
+path_to_encoder: './saved_models/pretrained_encoder_rieth_tep_rope_sp.pth'
 #path_to_encoder:
 
 pretraining:
@@ -57,6 +58,7 @@ pretraining:
   lr: 1e-3
   weight_decay: 1e-5
   contrastive_weight: 0.7
+  seq_pool_reconstruction_weight: 5.0
   epochs: 7
 
   device: 'cuda'
@@ -69,11 +71,13 @@ encoder_lr: 1e-5
 
 device: 'cuda'
 batch_size: 1024
-metric: 'euclidean'
-epsilon: 1
-#min_samples: 50
-min_cluster_fraction: 0.01
-max_triplets: 102400
+#metric: 'cosine'
+#epsilon: 0.1
+metric: 'cosine'
+epsilon: 0.04
+min_cluster_fraction: 0.005
+#max_triplets: 128000
+n_triplet_batches: 125
 n_samples_to_select: 50
 ch_score_momentum: 0.9
 max_mbytes_per_batch: 16000

@@ -251,6 +251,41 @@ class SeqPooling(nn.Module):
         
         return y
 
+class AESeqPooling(nn.Module):
+    def __init__(self, seq_len):
+        super().__init__()
+
+        self.encoder = nn.Sequential(
+            nn.Linear(seq_len, seq_len // 2),
+            nn.ReLU(),
+            nn.Linear(seq_len // 2, seq_len // 4),
+            nn.ReLU(),
+            nn.Linear(seq_len // 4, seq_len // 20 * 3),
+            nn.ReLU(),
+            nn.Linear(seq_len // 20 * 3, seq_len // 20),
+            nn.ReLU(),
+            nn.Linear(seq_len // 20, seq_len // 100),
+            nn.ReLU(),
+        )
+
+        self.decoder = nn.Sequential(
+            nn.Linear(seq_len // 100, seq_len // 20),
+            nn.ReLU(),
+            nn.Linear(seq_len // 20, seq_len // 20 * 3),
+            nn.ReLU(),
+            nn.Linear(seq_len // 20 * 3, seq_len // 4),
+            nn.ReLU(),
+            nn.Linear(seq_len // 4, seq_len // 2),
+            nn.ReLU(),
+            nn.Linear(seq_len // 2, seq_len),
+            nn.ReLU(),
+        )
+
+    def forward(self, x):
+        x = self.encoder(x.permute(0, 2, 1)).squeeze(-1)
+
+        return x
+
 class TSTransformerEncoder(nn.Module):
 
     def __init__(self, feat_dim, max_len, d_model, n_heads, num_layers, dim_feedforward, dropout=0, activation='gelu',
@@ -279,7 +314,8 @@ class TSTransformerEncoder(nn.Module):
 
         self.feat_dim = feat_dim
         
-        self.seq_pooling = SeqPooling(self.d_model)
+        # self.seq_pooling = SeqPooling(self.d_model)
+        self.seq_pooling = AESeqPooling(self.max_len)
         
         self.projection_linear = nn.Linear(self.d_model, self.d_model // 2)
         self.projection_bn = nn.BatchNorm1d(self.d_model // 2)
@@ -298,8 +334,8 @@ class TSTransformerEncoder(nn.Module):
         output_pred = self.dropout1(output_emb)
         
         output_pred = self.output_layer(output_pred)
-        
         output_emb_pool = self.seq_pooling(output_emb)
+        output_emb_pool_reconstructed = self.seq_pooling.decoder(output_emb_pool.unsqueeze(-1)).permute(0, 2, 1)
         output_emb_proj = self.projection_linear(output_emb_pool)
         output_emb_fin_proj = self.projection_bn(output_emb_proj)
         output_emb_fin_proj = self.projection_relu(output_emb_fin_proj)
@@ -307,7 +343,7 @@ class TSTransformerEncoder(nn.Module):
         # output_emb_fin_proj = F.normalize(output_emb_fin_proj, p=2, dim=1)  # change distance function?
 
         if return_all:
-            return output_pred, output_emb, output_emb_pool, output_emb_proj, output_emb_fin_proj
+            return output_pred, output_emb, output_emb_pool, output_emb_pool_reconstructed, output_emb_proj, output_emb_fin_proj
             
         return output_pred, output_emb_fin_proj
     

@@ -4,9 +4,14 @@ This repository is the modified official implementation of methods from the pape
 
 ## Our modifications
 
-* Changed second learning stage from Deep Clustering to semi-supervised encoder training with triplet loss (to make clusters separable) with DBSCAN applied later (so we don't have to specify number of clusters and could use margin from triplet loss to estimate epsilon for DBSCAN)
-* Added active learning for semi-supervised learning (data sampling for labeling and triplets sampling for training)
+* Changed second learning stage from Deep Clustering to semi-supervised encoder training with triplet loss 
+(to make clusters separable) with DBSCAN applied later (so we don't have to specify number of clusters and could use 
+triplet loss margin hyperparameter as epsilon for DBSCAN)
+* Added active learning for semi-supervised learning (data sampling for labeling and effective triplets ranking for training)
 * Added intermediate clusteing quality evaluation mechanism to estimate moment when we should sample more data
+* Changed fixed positional embeddings (as is origianl Transformer paper) to RoPE embeddings
+* Developed outlier handling technique (density-based clustering algorithms may produce `outlier` cluster)
+* 
 
 ## Requirements
 
@@ -36,13 +41,13 @@ Experimental results are stored in [results](/results/) folder. All arguments ar
 Results on `rieth_tep`
 
 || ACC    | ARI    | NMI    | Detection TPR | Detection FPR | CDR    | ADD    |
-|-|--------|--------|--------|---------------|-|--------|--------|
-|`pca_kmeans`| 0.2745 | 0.1100 | 0.3634 | 0.3590        |0.0000| 0.7910 | 113.95 |
-|`st_catgan`| 0.1754 | 0.1135 | 0.2223 | 0.3044        |0.0000| 0.3238 | 102.63 |
-|`convae`| 0.1794 | 0.1565 | 0.2537 | 0.3631        |0.0008| 0.3664 | 164.76 |
-|`sensorscan`| 0.5926 | 0.4747 | 0.6812 | 0.7316        |0.0014| 0.7351 | 57.15  |
-| `sensorscan (paper)`| 0.7850 | 0.7030 | 0.8460 | 0.8400        |0.0002| 0.9200 | 5.21   |
-|`sensordbscan`| ?      | ?      | ?      | ?             |?| ?      | ?      |
+|-|--------|--------|--------|---------------|---------------|--------|--------|
+|`pca_kmeans`| 0.2745 | 0.1100 | 0.3634 | 0.3590        | 0.0000        | 0.7910 | 113.95 |
+|`st_catgan`| 0.1754 | 0.1135 | 0.2223 | 0.3044        | 0.0000        | 0.3238 | 102.63 |
+|`convae`| 0.1794 | 0.1565 | 0.2537 | 0.3631        | 0.0008        | 0.3664 | 164.76 |
+|`sensorscan`| 0.5926 | 0.4747 | 0.6812 | 0.7316        | 0.0014        | 0.7351 | 57.15  |
+| `sensorscan (paper)`| 0.7850 | 0.7030 | 0.8460 | 0.8400        | 0.0002        | 0.9200 | 5.21   |
+|`sensordbscan`| 0.5446 | 0.2052 | 0.6819 | 0.5376 | 0.0000        | 0.9030 | 94.37  |
 
 Results on `reinartz_tep`
 

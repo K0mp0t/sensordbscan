@@ -11,7 +11,8 @@ dataset: "reinartz_tep"
 # Size of a sliding window to generate a sequence of samples.
 window_sizes: [70, 85, 100]
 
-fraction: 0.2
+train_fraction: 0.2
+test_fraction: 1
 
 # Size of a step for sliding window to generate a sequence of samples.
 step_size: 1
@@ -24,14 +25,14 @@ eval_batch_size: 4096
 
 # Path to a .pth file with pretrained model.
 path_to_model:
-# path_to_encoder:
-path_to_encoder: './saved_models/pretrained_encoder_reinartz_tep_rope.pth'
+#path_to_encoder:
+path_to_encoder: './saved_models/pretrained_encoder_reinartz_tep_rope_sp.pth'
 
 pretraining:
   dataset_name: ${dataset}
   dataset_window_size: 300
   step_size: 1
-  train_batch_size: 1280
+  train_batch_size: 1024
   visualize_batch_size: 256
   num_features: 30
 
@@ -57,22 +58,26 @@ pretraining:
   lr: 1e-3
   weight_decay: 1e-5
   contrastive_weight: 0.7
+  seq_pool_reconstruction_weight: 5.0
   epochs: 7
 
   device: 'cuda'
 
-epochs: 5
+epochs: 15
 clustering_finetuning_epochs: 3
 
 encoder_dim: 64
 encoder_lr: 1e-5
 
 device: 'cuda'
-batch_size: 1280
-metric: 'euclidean'
-epsilon: 1
-min_cluster_fraction: 0.0005
-max_triplets: 128000
+batch_size: 1024
+metric: 'cosine'
+epsilon: 0.1
+#metric: 'euclidean'
+#epsilon: 1
+min_cluster_fraction: 0.00025
+#max_triplets: 128000
+n_triplet_batches: 125
 n_samples_to_select: 50
 ch_score_momentum: 0.95
 max_mbytes_per_batch: 16000

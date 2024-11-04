@@ -36,12 +36,13 @@ def train_ssl_epoch(cfg, model, dataloader, loss_fn, optimizer):
         y = torch.cat([y_weak, y_strong], dim=0)
         mask = torch.cat([mask_weak, mask_strong], dim=0)
         pad_mask = torch.ones(*x.shape[:-1], dtype=torch.bool, device=cfg.device)
-        
-        prediction, embedings = model(x, pad_mask)
+
+        # output_pred, output_emb, output_emb_pool, output_emb_pool_reconstructed, output_emb_proj, output_emb_fin_proj
+        prediction, reconstruction_gt, _, reconstruction_pred, _, embedings = model(x, pad_mask, return_all=True)
         
         embedings_weak, embedings_strong = embedings[:cur_batch_size], embedings[cur_batch_size:]
         
-        loss = loss_fn(prediction, y, mask, embedings_weak, embedings_strong)
+        loss = loss_fn(prediction, y, mask, embedings_weak, embedings_strong, reconstruction_pred, reconstruction_gt)
         loss.backward()
         
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=4.0)

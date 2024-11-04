@@ -35,7 +35,7 @@ def add_smaller_windows(X, y, embs, pad_masks, cfg, model):
     expanded_y = y.clone().cpu()
     expanded_embs = embs.clone().cpu()
 
-    step_size = int(cfg.step_size / cfg.fraction)
+    step_size = int(cfg.step_size / cfg.train_fraction)
 
     for window_size in sorted(cfg.window_sizes)[:-1]:
         ws_multiplier = (max(cfg.window_sizes) - window_size) // step_size + 1
@@ -266,8 +266,9 @@ class TripletsDataset(torch.utils.data.Dataset):
                 self.triplet_distances = torch.cat([self.triplet_distances, triplet_distances_[triplet_distances_ > 0]])
 
                 # 3. take N best (N smallest abs values)
-                self.triplet_idxs = self.triplet_idxs[torch.argsort(self.triplet_distances).to(cfg.device)][:cfg.max_triplets]
-                self.triplet_distances = self.triplet_distances[torch.argsort(self.triplet_distances)][:cfg.max_triplets]
+                max_triplets = cfg.n_triplet_batches * cfg.batch_size
+                self.triplet_idxs = self.triplet_idxs[torch.argsort(self.triplet_distances).to(cfg.device)][:max_triplets]
+                self.triplet_distances = self.triplet_distances[torch.argsort(self.triplet_distances)][:max_triplets]
 
         self.triplet_idxs = self.triplet_idxs.cpu()
 

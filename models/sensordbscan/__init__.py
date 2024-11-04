@@ -45,7 +45,7 @@ def run(cfg):
     # if dataset_name == 'rieth_tep':
     #     dataset.train_mask = make_rieth_imbalance(dataset.train_mask)
 
-    dataset.train_mask = take_dataset_fraction(dataset, cfg)
+    dataset = take_dataset_fraction(dataset, cfg)
 
     logging.info('Creating dataloaders')
 
@@ -86,7 +86,7 @@ def run(cfg):
                 avg_loss = train_ssl_epoch(cfg.pretraining, encoder, pretraining_loader, loss_fn, optimizer)
                 logging.info(f'Epoch {epoch}: loss = {avg_loss:10.8f}')
 
-            torch.save(encoder.state_dict(), f'./saved_models/pretrained_encoder_{cfg.dataset}_rope.pth')
+            torch.save(encoder.state_dict(), f'./saved_models/pretrained_encoder_{cfg.dataset}_rope_sp.pth')
 
         logging.info('Training encoder with triplet loss')
         indices = list()
@@ -129,7 +129,9 @@ def run(cfg):
     train_label = pd.concat(train_label).astype('int')
 
     np.save(f'embeddings_{dataset_name}_train.npy', train_embs.cpu().numpy())
-    np.save(f'labels_{dataset_name}_train.npy', train_label)
+    # np.save(f'labels_{dataset_name}_train.npy', train_label)
+    train_label.to_csv(f'labels_{dataset_name}_train.csv')
+    np.save(f'train_labelled_indices_{dataset_name}.npy', indices.numpy())
 
     gc.collect()
     torch.cuda.empty_cache()
@@ -151,7 +153,8 @@ def run(cfg):
     test_label = pd.concat(test_label).astype('int')
 
     np.save(f'embeddings_{dataset_name}_test.npy', test_embs.cpu().numpy())
-    np.save(f'labels_{dataset_name}_test.npy', test_label)
+    # np.save(f'labels_{dataset_name}_test.npy', test_label)
+    test_label.to_csv(f'labels_{dataset_name}_test.csv')
 
     gc.collect()
     torch.cuda.empty_cache()

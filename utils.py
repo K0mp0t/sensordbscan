@@ -105,15 +105,21 @@ def make_rieth_imbalance(train_mask):
     return imbalance_train_mask
 
 def take_dataset_fraction(dataset, cfg):
-    labels = pd.merge(dataset.train_mask, dataset.label, on=['run_id', 'sample'])
-    labels = labels[labels.train_mask]
-    labels = labels.groupby('labels').sample(frac=cfg.fraction, random_state=cfg.random_seed)
+    train_labels = pd.merge(dataset.train_mask, dataset.label, on=['run_id', 'sample'])
+    train_labels = train_labels[train_labels.train_mask]
+    train_labels = train_labels.groupby('labels').sample(frac=cfg.train_fraction, random_state=cfg.random_seed)
 
-    fractioned_train_mask = dataset.train_mask.copy()
-    fractioned_train_mask.loc[:] = False
-    fractioned_train_mask.loc[labels.index] = True
+    dataset.train_mask.loc[:] = False
+    dataset.train_mask.loc[train_labels.index] = True
 
-    return fractioned_train_mask
+    test_labels = pd.merge(dataset.test_mask, dataset.label, on=['run_id', 'sample'])
+    test_labels = test_labels[test_labels.test_mask]
+    test_labels = test_labels.groupby('labels').sample(frac=cfg.test_fraction, random_state=cfg.random_seed)
+
+    dataset.test_mask.loc[:] = False
+    dataset.test_mask.loc[test_labels.index] = True
+
+    return dataset
 
 
 def print_clustering(metrics, logging):

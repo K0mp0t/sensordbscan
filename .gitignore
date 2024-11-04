@@ -21,5 +21,6 @@ visualization.gif
 cuda_memory_logger.py
 cuda_memory.txt
 **.npy
+**.csv
 visualization_for_paper/
 visualization_for_paper/**
