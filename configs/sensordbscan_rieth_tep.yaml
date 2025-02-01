@@ -71,24 +71,24 @@ encoder_lr: 1e-5
 
 device: 'cuda'
 batch_size: 1024
-#metric: 'cosine'
-#epsilon: 0.1
 metric: 'cosine'
-epsilon: 0.04
-min_cluster_fraction: 0.005
+epsilon: 0.07
+#metric: 'euclidean'
+#epsilon: 1
+min_cluster_fraction: 0.00025
 #max_triplets: 128000
 n_triplet_batches: 125
 n_samples_to_select: 50
-ch_score_momentum: 0.9
+ch_score_momentum: 0.95
 max_mbytes_per_batch: 16000
-dbscan_epsilon_multiplier: 0.9
+dbscan_epsilon_multiplier: 0.95
 
 knn_neighbors: 50
 handle_outliers: True
 visualize: False
 visualize_final_state: True
 
-alpha: 0.01
+alpha: 0.05
 
 classes: 'all'
 #classes: [0, 1, 2, 3, 4, 5]

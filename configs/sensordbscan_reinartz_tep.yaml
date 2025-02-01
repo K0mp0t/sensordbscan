@@ -26,7 +26,7 @@ eval_batch_size: 4096
 # Path to a .pth file with pretrained model.
 path_to_model:
 #path_to_encoder:
-path_to_encoder: './saved_models/pretrained_encoder_reinartz_tep_rope_sp.pth'
+path_to_encoder: './saved_models/pretrained_encoder_reinartz_tep_rope.pth'
 
 pretraining:
   dataset_name: ${dataset}

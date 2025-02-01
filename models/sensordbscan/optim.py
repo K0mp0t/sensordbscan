@@ -8,13 +8,18 @@ def build_pretraining_optim(cfg, model):
     l2_loss = MaskedMSELoss()
     ntx_loss = NTXentLoss(cfg.device, cfg.train_batch_size)
 
-    def loss_fn(prediction, y, mask, embedings_weak, embedings_strong, reconstruction_pred, reconstruction_gt):
+    # def loss_fn(prediction, y, mask, embedings_weak, embedings_strong, reconstruction_pred, reconstruction_gt):
+    #     masked_mse_loss_value = l2_loss(prediction, y, mask)
+    #     ntx_loss_value = ntx_loss(embedings_weak, embedings_strong)
+    #     seq_pooling_reconstruction_loss = torch.nn.functional.l1_loss(reconstruction_pred, reconstruction_gt)
+    #     return (masked_mse_loss_value +
+    #             cfg.contrastive_weight * ntx_loss_value +
+    #             cfg.seq_pool_reconstruction_weight * seq_pooling_reconstruction_loss)
+    def loss_fn(prediction, y, mask, embedings_weak, embedings_strong):
         masked_mse_loss_value = l2_loss(prediction, y, mask)
         ntx_loss_value = ntx_loss(embedings_weak, embedings_strong)
-        seq_pooling_reconstruction_loss = torch.nn.functional.l1_loss(reconstruction_pred, reconstruction_gt)
         return (masked_mse_loss_value +
-                cfg.contrastive_weight * ntx_loss_value +
-                cfg.seq_pool_reconstruction_weight * seq_pooling_reconstruction_loss)
+                cfg.contrastive_weight * ntx_loss_value)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
 

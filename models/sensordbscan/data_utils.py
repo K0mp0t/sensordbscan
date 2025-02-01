@@ -93,7 +93,8 @@ def build_triplets_loader(cfg, slices_dataset, model, indices, ch_scores, epoch,
 
     min_samples = int(embs.shape[0] * cfg.min_cluster_fraction)
     clustering_labels = DBSCAN(eps=cfg.epsilon*cfg.dbscan_epsilon_multiplier, min_samples=min_samples,
-                               metric=cfg.metric, max_mbytes_per_batch=cfg.max_mbytes_per_batch).fit_predict(embs.cpu().numpy())
+                               metric=cfg.metric, max_mbytes_per_batch=cfg.max_mbytes_per_batch,
+                               calc_core_sample_indices=False).fit_predict(embs.cpu().numpy())
 
     outliers_factor = np.sum(clustering_labels == -1) / embs.shape[0]
 

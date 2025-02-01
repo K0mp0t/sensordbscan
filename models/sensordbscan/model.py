@@ -314,8 +314,8 @@ class TSTransformerEncoder(nn.Module):
 
         self.feat_dim = feat_dim
         
-        # self.seq_pooling = SeqPooling(self.d_model)
-        self.seq_pooling = AESeqPooling(self.max_len)
+        self.seq_pooling = SeqPooling(self.d_model)
+        # self.seq_pooling = AESeqPooling(self.max_len)
         
         self.projection_linear = nn.Linear(self.d_model, self.d_model // 2)
         self.projection_bn = nn.BatchNorm1d(self.d_model // 2)
@@ -335,7 +335,7 @@ class TSTransformerEncoder(nn.Module):
         
         output_pred = self.output_layer(output_pred)
         output_emb_pool = self.seq_pooling(output_emb)
-        output_emb_pool_reconstructed = self.seq_pooling.decoder(output_emb_pool.unsqueeze(-1)).permute(0, 2, 1)
+        # output_emb_pool_reconstructed = self.seq_pooling.decoder(output_emb_pool.unsqueeze(-1)).permute(0, 2, 1)
         output_emb_proj = self.projection_linear(output_emb_pool)
         output_emb_fin_proj = self.projection_bn(output_emb_proj)
         output_emb_fin_proj = self.projection_relu(output_emb_fin_proj)
@@ -343,7 +343,8 @@ class TSTransformerEncoder(nn.Module):
         # output_emb_fin_proj = F.normalize(output_emb_fin_proj, p=2, dim=1)  # change distance function?
 
         if return_all:
-            return output_pred, output_emb, output_emb_pool, output_emb_pool_reconstructed, output_emb_proj, output_emb_fin_proj
+            # return output_pred, output_emb, output_emb_pool, output_emb_pool_reconstructed, output_emb_proj, output_emb_fin_proj
+            return output_pred, output_emb, output_emb_pool, output_emb_proj, output_emb_fin_proj
             
         return output_pred, output_emb_fin_proj
     
@@ -378,7 +379,8 @@ class SensorDBSCAN(object):
         min_samples = int(embs.shape[0] * self.cfg.min_cluster_fraction)
         cluster_labels = self.clustering_algorithm(eps=self.cfg.epsilon*self.cfg.dbscan_epsilon_multiplier,
                                                    min_samples=min_samples, metric=self.cfg.metric,
-                                                   max_mbytes_per_batch=self.cfg.max_mbytes_per_batch).fit_predict(embs)
+                                                   max_mbytes_per_batch=self.cfg.max_mbytes_per_batch,
+                                                   calc_core_sample_indices=False).fit_predict(embs)
 
         if self.cfg.handle_outliers and -1 in cluster_labels and len(set(cluster_labels)) > 2:
             knn = KNeighborsClassifier(n_neighbors=self.cfg.knn_neighbors, metric=self.cfg.metric)
