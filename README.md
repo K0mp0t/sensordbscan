@@ -1,7 +1,7 @@
 # SensorDBSCAN: Semi-Supervised Learning for Fault Diagnosis in Chemical Processes
 
 This repository is based on code from [SensorSCAN: Self-Supervised Learning and Deep Clustering for Fault Diagnosis in Chemical Processes](https://www.sciencedirect.com/science/article/abs/pii/S0004370223001583).
-We've been accepted to IEEE Access with this method --> Paper (insert link later) <--
+We've been accepted to IEEE Access with this method: [Paper](https://ieeexplore.ieee.org/document/10869347)
 
 ## Our modifications
 
