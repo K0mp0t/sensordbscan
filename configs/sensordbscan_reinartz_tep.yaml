@@ -61,7 +61,7 @@ pretraining:
 
   device: 'cuda'
 
-epochs: 5
+epochs: 15
 clustering_finetuning_epochs: 3
 
 encoder_dim: 64
