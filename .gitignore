@@ -23,3 +23,5 @@ cuda_memory.txt
 **.npy
 visualization_for_paper/
 visualization_for_paper/**
+notebooks/
+notebooks/**
