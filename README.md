@@ -64,3 +64,12 @@ Results on `reinartz_tep`
 | `sensorscan (paper)`   | 0.7360 | 0.4810 | 0.8500 | 0.8700        | 0.0002        | 0.9600 | 28.47  |
 | `sensordbscan (paper)` | 0.7379 | 0.5410 | 0.8154 | 0.7808        | 0.0000        | 0.8433 | 164.91 |
 | `sensordbscan (best)`  | 0.8297 | 0.6706 | 0.8800 | 0.8517        | 0.0009        | 0.9064 | 36.59  |
+
+Autoencoder-based sequence pooling results for `reinartz_tep`
+
+| Pooling type                 | Detection TPR | ARI    | NMI    | 
+|------------------------------|---------------|--------|--------|
+| Max pooling                  | 0.7237        | 0.4772 | 0.8270 | 
+| Average pooling              | 0.7432        | 0.5048 | 0.8321 |
+| Learnable weighted pooling   | 0.6337        | 0.3700 | 0.7789 |
+| Autoencoder sequence pooling | 0.8517        | 0.6706 | 0.8800 |
