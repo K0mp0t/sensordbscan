@@ -1,8 +1,13 @@
 # SensorDBSCAN: Semi-Supervised Learning for Fault Diagnosis in Chemical Processes
 
 This repository is based on code from [SensorSCAN: Self-Supervised Learning and Deep Clustering for Fault Diagnosis in Chemical Processes](https://www.sciencedirect.com/science/article/abs/pii/S0004370223001583).
-We've been accepted to IEEE Access with this method: [Paper](https://ieeexplore.ieee.org/document/10869347)
-We've been accepted to SenSys2025 with a poster article on autoencoder sequence pooling (TODO: add paper link)
+We've been accepted to IEEE Access with this method: [Paper](https://ieeexplore.ieee.org/document/10869347).
+
+We've been accepted to SenSys2025 with a poster article on autoencoder sequence pooling: [Paper](https://dl.acm.org/doi/abs/10.1145/3715014.3724030)
+
+We've been accepted to SenSys2025 with a poster article on active learning: [Paper](https://dl.acm.org/doi/abs/10.1145/3715014.3724060)
+
+Code for SensorDBSCAN paper is available in the [ieee_access_0709 branch](../../tree/ieee_access_0709) branch. Other modifications including ones made for SenSys articles are available in master branch.
 
 ## Our modifications
 
